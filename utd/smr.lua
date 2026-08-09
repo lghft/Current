@@ -197,10 +197,8 @@ function ragnaOnLastBoss(towerIndex)
     local enemiesFolder = workspace:WaitForChild("EntityModels"):WaitForChild("Enemies")
     print("[Ragna Logic] Wave 25 detected. Waiting for final boss (1 enemy remaining)...")
 
-    repeat
-        task.wait(0.5)
-    until #enemiesFolder:GetChildren() == 1
-
+    repeat task.wait(0.5) until #enemiesFolder:GetChildren() == 1
+    print("[Ragna Logic] Final boss detected. Monitoring position and health for ability activation...")
     local lastBoss = enemiesFolder:GetChildren()[1]
     print("[Ragna Logic] Last boss detected: " .. lastBoss.Name)
 
@@ -229,7 +227,7 @@ function ragnaOnLastBoss(towerIndex)
                         and eHRP.EnemyGui.HealthBar:FindFirstChild("Frame")
                         and eHRP.EnemyGui.HealthBar.Frame:FindFirstChild("Fill")
 
-                    if healthFill and healthFill.BackgroundColor3 == Color3.fromRGB(255, 0, 0) then
+                    if healthFill and healthFill.BackgroundColor3 == Color3.fromRGB(115, 0, 255) and not healthFill.BackgroundColor3 == Color3.fromRGB(0, 255, 255) then
                         print("[Ragna Logic] Boss in range with red health bar! Activating ability...")
                         useTowerAbility(towerIndex, 0.5)
                     end
@@ -346,8 +344,9 @@ function summerMatch()
 
     local function wv25()
         print("[Wave Action] >>> EXECUTING WAVE 25 FUNCTION <<<")
-        task.wait(8)
+        task.wait(3)
         task.spawn(function()
+            print("[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
             ragnaOnLastBoss(5)
         end)
     end
