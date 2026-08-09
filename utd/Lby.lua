@@ -19,6 +19,16 @@ local stele = workspace.Lobby.ClassicPartyTeleporters.Teleporter2
 local ptyFind = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Main2.PartyFinder
 local proximityThreshold = 50
 getgenv().TeleLoop = true
+
+queueteleport =  missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
+local TeleportCheck = false
+Players.LocalPlayer.OnTeleport:Connect(function(State)
+	if (not TeleportCheck) and queueteleport then
+		TeleportCheck = true
+		queueteleport("loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/utd/Lby.lua'))()")
+	end
+end)
+
 task.wait()
 if plrAmount == 1 and game.Players.LocalPlayer and game.Workspace.Lobby and plrAmount < 2 then
     print("=1 plr")
