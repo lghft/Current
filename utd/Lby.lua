@@ -20,6 +20,11 @@ local ptyFind = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Mai
 local proximityThreshold = 50
 getgenv().TeleLoop = true
 
+function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
 queueteleport =  missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
 local TeleportCheck = false
 Players.LocalPlayer.OnTeleport:Connect(function(State)
