@@ -8,7 +8,6 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 local towerFolder = game.Workspace:WaitForChild("EntityModels"):WaitForChild("Towers")
-local enemyFolder = game.Workspace:WaitForChild("EntityModels"):WaitForChild("Enemies")
 
 local placedTowers = {}
 local currentTowerIndex = 0
