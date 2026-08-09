@@ -1,399 +1,230 @@
+print("lby?")
+getgenv().IsLDLD = true
+getgenv().Active = "eventhard"
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 task.wait(4)
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local towerFolder = game.Workspace:WaitForChild("EntityModels"):WaitForChild("Towers")
-
-local placedTowers = {}
-local currentTowerIndex = 0
-getgenv().Ability = false
-getgenv().Replay = false
-
--- Non-blocking asynchronous listener for tower placement confirmations
 task.spawn(function()
-    print("[Init] Waiting for TowerPlacedSuccessfully remote to exist...")
-    
-    local Event
-    local maxWait = 0
-    
-    -- Wait for the remote to be created (happens on first tower placement)
-    while not Event and maxWait < 300 do
-        Event = game:GetService("ReplicatedStorage"):FindFirstChild("Modules")
-            and game:GetService("ReplicatedStorage").Modules:FindFirstChild("GlobalInit")
-            and game:GetService("ReplicatedStorage").Modules.GlobalInit:FindFirstChild("RemoteEvents")
-            and game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents:FindFirstChild("TowerPlacedSuccessfully")
-        
-        if not Event then
-            task.wait(0.5)
-            maxWait = maxWait + 0.5
+    repeat task.wait() until game.CoreGui:FindFirstChild('RobloxPromptGui')
+
+    local lp,po,ts = game:GetService('Players').LocalPlayer,game.CoreGui.RobloxPromptGui.promptOverlay,game:GetService('TeleportService')
+
+    po.ChildAdded:connect(function(a)
+        if a.Name == 'ErrorPrompt' then
+            repeat
+                ts:Teleport(game.PlaceId)
+                task.wait(2)
+            until false
         end
-    end
-    
-    if Event then
-        print("[Init] TowerPlacedSuccessfully remote found! Setting up interception...")
-        
-        local lastPlacedTower = nil
-        local lastPlaceTime = 0
-        
-        for _, Connection in getconnections(Event.OnClientEvent) do
-            local old; old = hookfunction(Connection.Function, function(unitID, towerID, ...)
-                local currentTime = tick()
-                local key = tostring(unitID) .. ":" .. tostring(towerID)
-                
-                -- Check if this is a duplicate within 0.5 seconds
-                if lastPlacedTower == key and (currentTime - lastPlaceTime) < 0.5 then
-                    print(string.format("[Tower] Duplicate detected (unitID=%s, towerID=%s) - skipping", tostring(unitID), tostring(towerID)))
-                    return old(unitID, towerID, ...)
-                end
-                
-                currentTowerIndex = currentTowerIndex + 1
-                
-                local towerData = {
-                    towerIndex = currentTowerIndex,
-                    unitID = tostring(unitID),
-                    towerID = tostring(towerID)
-                }
-                
-                table.insert(placedTowers, towerData)
-                print(string.format("[Tower Registered] Index: %d | UnitID: %s | TowerID: %s", currentTowerIndex, tostring(unitID), tostring(towerID)))
-                
-                lastPlacedTower = key
-                lastPlaceTime = currentTime
-                
-                return old(unitID, towerID, ...)
-            end)
-        end
-        
-        -- Register any towers that were already placed before interception was set up
-        print("[Init] Checking for pre-existing towers...")
-        for _, tower in ipairs(towerFolder:GetChildren()) do
-            currentTowerIndex = currentTowerIndex + 1
-            local towerData = {
-                towerIndex = currentTowerIndex,
-                unitID = tostring(tower.Name),
-                towerID = "pre-existing"
-            }
-            table.insert(placedTowers, towerData)
-            print(string.format("[Tower Registered - Pre-existing] Index: %d | UnitID: %s", currentTowerIndex, tostring(tower.Name)))
-        end
-        
-    else
-        warn("[Warning] TowerPlacedSuccessfully remote was not created within timeout. Will rely on tower folder detection.")
-    end
+    end)
 end)
 
--- Helper function to find a tower's data by sequential index
-local function getTowerByIndex(index)
-    for _, towerData in ipairs(placedTowers) do
-        if towerData.towerIndex == index then
-            return towerData
+-- Safer way to wait for GUI elements with proper error handling
+local function waitForGui(timeout)
+    timeout = timeout or 30
+    local startTime = tick()
+    repeat
+        task.wait(0.1)
+        local success, result = pcall(function()
+            local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui", 1)
+            local mainGui = playerGui:WaitForChild("MainGui", 1)
+            local mainFrames = mainGui:WaitForChild("MainFrames", 1)
+            local loadingScreen = mainFrames:WaitForChild("LoadingScreen", 1)
+            return loadingScreen.Visible == false
+        end)
+        if success and result then break end
+        if tick() - startTime > timeout then
+            warn("GUI load timeout after " .. timeout .. " seconds")
+            break
         end
-    end
-    return nil
+    until false
 end
 
-function clickButton(ClickOnPart)
-    local vim = game:GetService("VirtualInputManager")
-    local inset1, inset2 = game:GetService("GuiService"):GetGuiInset()
-    local insetOffset = inset1 - inset2
-    local part = ClickOnPart
-    local topLeft = part.AbsolutePosition + insetOffset
-    local center = topLeft + (part.AbsoluteSize / 2)
-    local X = center.X + 15
-    local Y = center.Y
-    vim:SendMouseButtonEvent(X, Y, 0, true, game, 0)
-    task.wait(0.1)
-    vim:SendMouseButtonEvent(X, Y, 0, false, game, 0)
-    task.wait(1)
-    print("Clicked: ", ClickOnPart)
+waitForGui(30)
+print("Lby Loaded! hell yeah!")
+
+local char = game.Players.LocalPlayer.Character
+local Players = game:GetService('Players')
+local plrAmount = #Players:GetPlayers()
+local eHtele = workspace.Lobby.SummerEventLobby.EventTeleporters.SummerEventHardTeleporter3["Cylinder.119"].VFX.hitbox
+local eRtele = workspace.Lobby.SummerEventLobby.EventTeleporters.SummerEventRaidTeleporter["Cylinder.119"].VFX.hitbox
+local dtele = workspace.Lobby.DungeonLobby.DungeonTeleporters.Teleporter1.Teleport.DisplayPart
+local stele = workspace.Lobby.ClassicPartyTeleporters.Teleporter2
+local ptyFind = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Main2.PartyFinder
+local proximityThreshold = 50
+getgenv().TeleLoop = true
+
+function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
 end
 
-function spd()
-    local args = { "2" }
-    ReplicatedStorage:WaitForChild("Modules")
-        :WaitForChild("GlobalInit"):WaitForChild("RemoteEvents")
-        :WaitForChild("ClientRequestGameSpeed"):FireServer(unpack(args))
-end
-
-function startMatch()
-    ReplicatedStorage:WaitForChild("Modules")
-        :WaitForChild("GlobalInit")
-        :WaitForChild("RemoteEvents")
-        :WaitForChild("PlayerVoteToStartMatch"):FireServer()
-end
-
-function placeUnit(towerID, pos, waittime, rotation)
-    rotation = rotation or 0
-    local placeRemote = ReplicatedStorage:WaitForChild("GenericModules"):WaitForChild("Service"):WaitForChild("Network"):WaitForChild("PlayerPlaceTower")
-    local formattedTowerString = tostring(LocalPlayer.UserId) .. ":" .. tostring(towerID)
-    
-    placeRemote:FireServer(formattedTowerString, pos, rotation)
-    task.wait(waittime or 1)
-end
-
-function upgradeUnit(towerIndex, pathSelection, waittime)
-    local towerData = getTowerByIndex(towerIndex)
-    if not towerData then return end
-    
-    local remote = ReplicatedStorage:WaitForChild("GenericModules"):WaitForChild("Service"):WaitForChild("Network"):WaitForChild("PlayerUpgradeTower")
-    
-    if pathSelection then
-        remote:FireServer(towerData.unitID, pathSelection)
-    else
-        remote:FireServer(towerData.unitID)  -- Only send unitID if no path
-    end
-    
-    task.wait(waittime or 0.5)
-end
-
-function _sellUnit(towerIndex, waittime)
-    -- Implement selling logic here if needed
-end
-
-function targetUnit(towerIndex, targeting, waittime)
-    local towerData = getTowerByIndex(towerIndex)
-    if not towerData then return end
-
-    local args = {
-        [1] = tostring(towerData.unitID),
-        [2] = tostring(targeting)
-    }
-    
-    ReplicatedStorage:WaitForChild("Modules"):WaitForChild("GlobalInit"):WaitForChild("RemoteEvents"):WaitForChild("PlayerSetTowerTargetMode"):FireServer(unpack(args))
-    task.wait(waittime or 0.5)
-end
-
-function useTowerAbility(towerIndex, waittime)
-    local towerData = getTowerByIndex(towerIndex)
-    if not towerData then return end
-
-    local args = {
-        [1] = tostring(towerData.unitID)
-    }
-
-    ReplicatedStorage:WaitForChild("Modules"):WaitForChild("GlobalInit"):WaitForChild("RemoteEvents"):WaitForChild("PlayerActivateTowerAbility"):FireServer(unpack(args))
-    task.wait(waittime or 0.5) 
-end
-
-function autoTowerAbility(towerIndex, interval)
-    task.spawn(function()
-        while getgenv().Ability == true do
-            local towerData = getTowerByIndex(towerIndex)
-            if towerData then
-                useTowerAbility(towerIndex, interval or 1)
-            else
-                task.wait(1) -- Wait for tower to be registered if called too early
-            end
+-- Helper function to safely get nested GUI elements
+local function safeGetGui(path, timeout)
+    timeout = timeout or 5
+    local success, result = pcall(function()
+        local current = path[1]
+        for i = 2, #path do
+            current = current:WaitForChild(path[i], timeout)
         end
+        return current
     end)
+    return success and result or nil
 end
 
-function ragnaOnLastBoss(towerIndex)
-    local enemiesFolder = workspace:WaitForChild("EntityModels"):WaitForChild("Enemies")
-    print("[Ragna Logic] Wave 25 detected. Waiting for final boss (1 enemy remaining)...")
-    local bossgui = game:GetService("Players").LocalPlayer.PlayerGui:WaitForChild("BossGui")
-    local Bossbar = bossgui.Bar
-    repeat task.wait() until bossgui.Enabled == true
-    print("[Ragna Logic] Boss GUI detected. Monitoring for final boss...")
-    repeat task.wait() until Bossbar.Visible == true
-    print("[Ragna Logic] Boss bar detected. Monitoring for final boss...")
-    repeat task.wait(0.5) until #enemiesFolder:GetChildren() == 1
-    print("[Ragna Logic] Final boss detected. Monitoring position and health for ability activation...")
-    local lastBoss = enemiesFolder:GetChildren()[1]
-    print("[Ragna Logic] Last boss detected: " .. lastBoss.Name)
+queueteleport =  missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
+local TeleportCheck = false
+Players.LocalPlayer.OnTeleport:Connect(function(State)
+	if (not TeleportCheck) and queueteleport then
+		TeleportCheck = true
+		queueteleport("loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/utd/Lby.lua'))()")
+	end
+end)
 
-    local DETECT_RADIUS = 55 -- studs
-
-    while true do
-        task.wait(0.2)
-
-        local towerData = getTowerByIndex(towerIndex)
-        if towerData and lastBoss and lastBoss.Parent and lastBoss:FindFirstChild("HumanoidRootPart") then
-            local ragnaModel = workspace.EntityModels.Towers:FindFirstChild(towerData.unitID)
-
-            if ragnaModel and ragnaModel:FindFirstChild("HumanoidRootPart") then
-                local rPos = ragnaModel.HumanoidRootPart.Position
-                local eHRP = lastBoss.HumanoidRootPart
-                local ePos = eHRP.Position
-
-                -- true circular/spherical distance check instead of box check
-                local distance = (ePos - rPos).Magnitude
-                local inRange = distance <= DETECT_RADIUS
-
-                if inRange then
-                    local healthFill = eHRP:FindFirstChild("EnemyGui")
-                        and eHRP.EnemyGui:FindFirstChild("HealthBar")
-                        and eHRP.EnemyGui.HealthBar:FindFirstChild("Frame")
-                        and eHRP.EnemyGui.HealthBar.Frame:FindFirstChild("Fill")
-
-                    if healthFill then
-                        local isShielded = healthFill.BackgroundColor3 == Color3.fromRGB(0, 255, 255)
-                        if not isShielded then
-                            print("Boss isn't Shielded! Checking health bar color...")
-                            if healthFill.BackgroundColor3 == Color3.fromRGB(115, 0, 255) then
-                                print("[Ragna Logic] Boss in range with red health bar! Activating ability...")
-                                useTowerAbility(towerIndex, 0.5)
-                            end
-                        end
+task.wait()
+if plrAmount == 1 and game.Players.LocalPlayer and game.Workspace.Lobby and plrAmount < 2 then
+    print("=1 plr")
+    if getgenv().Active == "eventhard" then -- eHtelo
+        task.spawn(function()
+            while getgenv().TeleLoop == true do
+                task.wait(1)
+                local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                local targetPos = eHtele.Position
+                if not humanoidRoot then break end
+                
+                local distance = (humanoidRoot.Position - targetPos).Magnitude
+                
+                if distance <= proximityThreshold then
+                    getgenv().TeleLoop = false
+                    print("telsse Loop Breeak!?#")
+                    break
+                else
+                    char:MoveTo(eHtele.Position)
+                end
+            end
+        end)
+        
+    elseif getgenv().Active == "eventraid" then -- ERtele
+        print("YEAH RAIDING!!!!#@(#?")
+        char:MoveTo(eRtele.Position)
+        task.wait(60)
+        if plrAmount == 1 then
+            task.spawn(function()
+                while getgenv().TeleLoop == true do
+                    task.wait(1)
+                    local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                    local targetPos = eRtele.Position
+                    if not humanoidRoot then break end
+                    
+                    local distance = (humanoidRoot.Position - targetPos).Magnitude
+                    
+                    if distance <= proximityThreshold then
+                        getgenv().TeleLoop = false
+                        print("telsse Loop Breeak!?#")
+                        break
+                    else
+                        char:MoveTo(Vector3.new(11249, 23, 90))
                     end
                 end
+            end)
+        end
+    elseif dtele and getgenv().Active == "dun" then
+        task.wait(1)
+        local success = pcall(function()
+            local dunMap = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.FloorSelection.SelectedMap.MapName
+            if dunMap.Text == "Forsaken Prison - Floor 10" or dunMap.Text == "Forsaken Prison - Floor 9" or dunMap.Text == "Desolate Crypt - Floor 11" then
+                game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("GlobalInit"):WaitForChild("RemoteEvents"):WaitForChild("PlayerClaimDungeonReward"):FireServer()
+                print("YESSS Collected...")
+            end
+        end)
+        if not success then warn("Failed to check dungeon reward") end
+        
+        task.wait()
+        print("=1 dun")
+        wait()
+        if char:FindFirstChild("PrimaryPart") then
+            char.PrimaryPart.CFrame = CFrame.new(43.3874359, -23.1395016, 4058.01099, -0.766061664, 0, 0.642767608, 0, 1, 0, -0.642767608, 0, -0.766061664)
+        end
+        
+        local floorSelection = safeGetGui({game:GetService("Players").LocalPlayer.PlayerGui, "MainGui", "MainFrames", "FloorSelection"}, 10)
+        if floorSelection then
+            repeat wait() until floorSelection.Visible == true
+            local hard = floorSelection:FindFirstChild("SelectedMap") and floorSelection.SelectedMap:FindFirstChild("Buttons") and floorSelection.SelectedMap.Buttons:FindFirstChild("HardcoreButton")
+            if hard then
+                firesignal(hard.Activated)
+                wait(1)
+                local strt = floorSelection.SelectedMap.Buttons:FindFirstChild("StartButton")
+                if strt then
+                    firesignal(strt.Activated)
+                else
+                    warn("StartButton not found")
+                end
+            else
+                warn("HardcoreButton not found")
             end
         else
-            if not lastBoss or not lastBoss.Parent then
-                print("[Ragna Logic] Boss defeated or despawned.")
-                break
-            end
+            warn("FloorSelection GUI not found")
         end
-    end
-end
-
-function summerMatch()
-    print("==================================================")
-    print("[SummerMatch] Main match function started!")
-    print("==================================================")
-
-    local waveLabel = LocalPlayer.PlayerGui:WaitForChild("MainGui"):WaitForChild("MainFrames"):WaitForChild("Wave"):WaitForChild("WaveIndex")
-    local endGui = LocalPlayer.PlayerGui:WaitForChild("MainGui"):WaitForChild("MainFrames"):WaitForChild("RoundOver")
-    
-    local matchConnections = {}
-
-    local function onRoundOver()
-        if endGui.Visible == true then
-            print("[Match Ended] RoundOver UI detected. Stopping loops and cleaning up...")
-            getgenv().Ability = false
+    elseif stele and getgenv().Active == "story" then
+        print("=1 story")
+        wait()
+        if char:FindFirstChild("PrimaryPart") then
+            char.PrimaryPart.CFrame = CFrame.new(-269, 34, -135)
+        end
+        wait()
+        
+        local mapSelection = safeGetGui({game:GetService("Players").LocalPlayer.PlayerGui, "MainGui", "MainFrames", "MapSelection"}, 10)
+        if mapSelection then
+            repeat wait() until mapSelection.Visible == true
             
-            for _, conn in ipairs(matchConnections) do
-                if conn.Connected then
-                    conn:Disconnect()
+            local mapS = mapSelection:FindFirstChild("MapList") and mapSelection.MapList:FindFirstChild("ScrollingFrame") and mapSelection.MapList.ScrollingFrame:FindFirstChild("LasNoches")
+            if mapS then
+                firesignal(mapS.Activated)
+                wait(0.5)
+                local hrdB = mapSelection:FindFirstChild("SelectedMap") and mapSelection.SelectedMap:FindFirstChild("Buttons") and mapSelection.SelectedMap.Buttons:FindFirstChild("HardButton")
+                if hrdB then
+                    firesignal(hrdB.Activated)
+                    wait(0.55)
+                    local strtB = mapSelection.SelectedMap.Buttons:FindFirstChild("StartButton")
+                    if strtB then
+                        firesignal(strtB.Activated)
+                    else
+                        warn("StartButton not found")
+                    end
+                else
+                    warn("HardButton not found")
+                end
+            else
+                warn("LasNoches map not found")
+            end
+        else
+            warn("MapSelection GUI not found")
+        end
+        wait()
+    end
+elseif plrAmount > 1 and game.Workspace.Lobby then
+    print(">1")
+    if ptyFind and ptyFind.Visible == true then
+        task.wait(1)
+        spawn(function()
+            while true do
+                local success, _ = pcall(function()
+                    local partyFinder = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.PartyFinder
+                    local genServ = partyFinder.Main.MyServerPanel.Main.Content.LastSavedServer.Panel.GenerateNewServerButton
+                    firesignal(genServ.Activated)
+                    task.wait(1)
+                    local jlservB = partyFinder.Main.MyServerPanel.Main.Content.LastSavedServer.Panel.Join
+                    firesignal(jlservB.Activated)
+                end)
+                if not success then
+                    warn("Party finder error, retrying...")
+                    task.wait(2)
+                else
+                    task.wait()
                 end
             end
-            table.clear(matchConnections)
-
-            if getgenv().Replay == true then
-                print("[Match Ended] Replay is enabled. Voting for replay...")
-                ReplicatedStorage:WaitForChild("Modules")
-                    :WaitForChild("GlobalInit"):WaitForChild("RemoteEvents")
-                    :WaitForChild("PlayerVoteReplay"):FireServer()
-                
-                -- Wait for the end screen to close
-                repeat
-                    task.wait(0.5)
-                until endGui.Visible == false
-
-                -- Wait until the old towers are cleared out of the workspace
-                print("[Replay] Waiting for server to clear old match data...")
-                repeat
-                    task.wait(0.5)
-                until #towerFolder:GetChildren() == 0
-
-                -- Extra buffer to ensure cash & wave state are fully reset on the new map
-                task.wait(3)
-                
-                -- Reset tracking tables for the fresh match
-                table.clear(placedTowers)
-                currentTowerIndex = 0
-                
-                print("[Replay] Starting new match sequence...")
-                summerMatch()
-            else
-                print("[Match Ended] Waiting to lobby...")
-                --[[
-                ReplicatedStorage:WaitForChild("Modules")
-                :WaitForChild("GlobalInit"):WaitForChild("RemoteEvents")
-                :WaitForChild("PlayerRequestReturnLobby"):FireServer()
-                ]]
-            end
-        end
-    end
-
-    table.insert(matchConnections, endGui:GetPropertyChangedSignal("Visible"):Connect(onRoundOver))
-    onRoundOver()
-
-    local function wv0()
-        print("[Wave Action] >>> EXECUTING WAVE 0 FUNCTION <<<")
-        spd()
-        placeUnit(230016, Vector3.new(-1173.5047607422, 135.64385986328, -1687.5249023438), 1) -- dante (Index 1)
-        placeUnit(226295, Vector3.new(-1307.4481201172, 144.26693725586, -1684.2392578125), 1) -- yumeko (Index 2)
-        startMatch()
-        placeUnit(233025, Vector3.new(-1240.6032714844, 143.72987365723, -1697.6192626953), 0) -- emilia (Index 3)
-        
-        getgenv().Ability = true
-        autoTowerAbility(3, 1) -- Auto-use Emilia's ability every 1 second
-        task.wait()
-        autoTowerAbility(2, 1)
-        task.wait()
-        placeUnit(228582, Vector3.new(-1507.8286132812, 144.07293701172, -1390.3227539062), 1) -- ulq (Index 4)
-        print("[Wave Action] >>> WAVE 0 COMPLETED <<<")
-    end
-
-    local function wv10()
-        print("[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
-        placeUnit(233240, Vector3.new(-1237.8453369141, 143.48547363281, -1678.2745361328), 1) -- ragna (Index 5)
-        upgradeUnit(5, 1, 1) -- chooses Ragna path  
-        task.wait(1)
-        task.wait(1)
-        game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
-        game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Visible = true
-        game:GetService("Players").LocalPlayer.PlayerGui.MainGui.UpgradePathSelection.Visible = false
-        placeUnit(231880, Vector3.new(-1237.7738037109, 143.60464477539, -1682.4620361328), 1) -- aizen (Index 6)
-        print("[Wave Action] >>> WAVE 10 COMPLETED <<<")
-    end
-
-    local function wv15()
-        print("[Wave Action] >>> EXECUTING WAVE 15 FUNCTION <<<")
-        task.wait(1)
-        autoTowerAbility(6, 1) -- Auto-use Sacrifice
-        task.wait(1)
-        print("[Wave Action] >>> WAVE 15 COMPLETED <<<")
-    end
-
-    local function wv25()
-        print("[Wave Action] >>> EXECUTING WAVE 25 FUNCTION <<<")
-        task.wait(5)
-        task.spawn(function()
-            print("[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
-            ragnaOnLastBoss(5)
         end)
     end
-
-    local waveActions = {
-        [0] = wv0,
-        [10] = wv10,
-        [15] = wv15,
-        [25] = wv25,
-    }
-
-    local firedWaves = {}
-
-    local function checkCurrentWave()
-        local rawText = tostring(waveLabel.Text)
-        local currentWave = tonumber(rawText:match("(%d+)%s*/"))
-
-        print(string.format("[Wave Check] Raw Text: '%s' | Extracted Wave Number: %s", rawText, tostring(currentWave)))
-
-        if currentWave and waveActions[currentWave] and not firedWaves[currentWave] then
-            print(string.format("[Wave Check] Match found for Wave %d! Triggering action...", currentWave))
-            firedWaves[currentWave] = true
-            waveActions[currentWave]()
-        end
-    end
-
-    table.insert(matchConnections, waveLabel:GetPropertyChangedSignal("Text"):Connect(checkCurrentWave))
-    
-    task.spawn(function()
-        for i = 1, 15 do
-            checkCurrentWave()
-            if firedWaves[0] then
-                break
-            end
-            task.wait(0.5)
-        end
-    end)
 end
-
-summerMatch()
