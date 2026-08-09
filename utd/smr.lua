@@ -3,10 +3,6 @@ if not game:IsLoaded() then
 end
 task.wait(4)
 
---[[ CheckList
-{} Ragna Ability
-]]
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
