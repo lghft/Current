@@ -236,7 +236,7 @@ function ragnaOnLastBoss(towerIndex)
                         if not isShielded then
                             print("Boss isn't Shielded! Checking health bar color...")
                             if healthFill.BackgroundColor3 == Color3.fromRGB(115, 0, 255) then
-                                print("[Ragna Logic] Boss in range with red health bar! Activating ability...")
+                                print("[Ragna Logic] Boss in range with purple health bar! Activating ability...")
                                 useTowerAbility(towerIndex, 0.5)
                             end
                         end
