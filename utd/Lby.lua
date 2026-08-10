@@ -42,7 +42,7 @@ local function waitForGui(timeout)
     until false
 end
 
-waitForGui(30)
+waitForGui(120)
 print("Lby Loaded! hell yeah!")
 
 local char = game.Players.LocalPlayer.Character
