@@ -5,15 +5,16 @@ local player = Players.LocalPlayer
 
 local function sendWebhook()
     -- Safely fetch UI elements and leaderstats with error handling
-    local success, eventCurrency, gold, level, gems = pcall(function()
+    local success, eventCurrency, gold, level, bplevel, gems = pcall(function()
         local mainGui = player.PlayerGui:WaitForChild("MainGui", 2)
         
         local ec = mainGui.MainFrames.EventStore.Main.Foreground.TopPanel.Currencies.EventCurrency.Button.Price.Amount.Text
         local g = player.leaderstats.Gold.Value
         local lvl = player.leaderstats.Level.Value
+        local bplvl = mainGui.MainFrames.Battlepass.Main.Foreground.RightPanel.Battlepass.TopFrame.Progress.Top.Level.TextLabel.Text
         local gem = mainGui.HUD.Currencies.Gem.Frame.amount.Text
         
-        return ec, g, lvl, gem
+        return ec, g, lvl, bplvl, gem
     end)
 
     if not success then
@@ -41,7 +42,12 @@ local function sendWebhook()
                 {
                     ["name"] = "Level",
                     ["value"] = tostring(level),
-                    ["inline"] = false
+                    ["inline"] = true
+                },
+                {
+                    ["name"] = "BattlePass Level",
+                    ["value"] = tostring(bplevel),
+                    ["inline"] = true
                 },
                 {
                     ["name"] = "Clams",
