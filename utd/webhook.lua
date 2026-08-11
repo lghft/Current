@@ -23,9 +23,9 @@ local function sendWebhook()
 
     -- Construct the payload for Discord matching your exact layout using inline fields
     local data = {
-        ["content"] = "Arrived To Lobby",
+        ["content"] = "",
         ["embeds"] = {{
-            ["title"] = "📊 Player Status",
+            ["title"] = "📊 Lobby Player Status",
             ["color"] = 65280, -- Green color
             ["fields"] = {
                 {
