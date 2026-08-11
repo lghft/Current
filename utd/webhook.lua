@@ -24,7 +24,9 @@ local function sendWebhook()
     -- Safely fetch UI elements and leaderstats with error handling
     local success, eventCurrency, gold, level, bplevel, gems, bpExpBar = pcall(function()
         local mainGui = player.PlayerGui:WaitForChild("MainGui", 2)
-        
+        local eventBpBtn = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Battlepass.Main.Foreground.RightPanel.Battlepass.Filters.SummerEventBattlepass26.Button
+        firesignal(eventBpBtn.Activated)
+        task.wait()
         local ec = mainGui.MainFrames.EventStore.Main.Foreground.TopPanel.Currencies.EventCurrency.Button.Price.Amount.Text
         local g = player.leaderstats.Gold.Value
         local lvl = player.leaderstats.Level.Value
