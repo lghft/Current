@@ -21,13 +21,28 @@ local function sendWebhook()
         return
     end
 
-    -- Construct the payload for Discord (using an embed for clean formatting)
+    -- Construct the payload for Discord matching your exact layout using inline fields
     local data = {
         ["content"] = "Arrived To Lobby",
         ["embeds"] = {{
             ["title"] = "📊 Player Status",
             ["color"] = 65280, -- Green color
             ["fields"] = {
+                {
+                    ["name"] = "Display",
+                    ["value"] = "||" .. player.DisplayName .. "||",
+                    ["inline"] = false
+                },
+                {
+                    ["name"] = "User",
+                    ["value"] = "||" .. player.Name .. "||",
+                    ["inline"] = false
+                },
+                {
+                    ["name"] = "Level",
+                    ["value"] = tostring(level),
+                    ["inline"] = false
+                },
                 {
                     ["name"] = "Clams",
                     ["value"] = tostring(eventCurrency),
@@ -39,18 +54,10 @@ local function sendWebhook()
                     ["inline"] = true
                 },
                 {
-                    ["name"] = "Level",
-                    ["value"] = tostring(level),
-                    ["inline"] = true
-                },
-                {
                     ["name"] = "Gems",
                     ["value"] = tostring(gems),
-                    ["inline"] = true
+                    ["inline"] = false
                 }
-            },
-            ["footer"] = {
-                ["text"] = "Player: ||" .. player.Name .. "||"
             }
         }}
     }
