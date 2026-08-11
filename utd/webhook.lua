@@ -3,9 +3,26 @@ local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
 
+-- Helper function to generate an ASCII progress bar
+local function createProgressBar(current, max, length)
+    length = length or 10
+    current = tonumber(current) or 0
+    max = tonumber(max) or 1
+    if max <= 0 then max = 1 end
+    
+    local percentage = math.clamp(current / max, 0, 1)
+    local filledCount = math.floor(percentage * length)
+    local emptyCount = length - filledCount
+    
+    local bar = string.rep("█", filledCount) .. string.rep("░", emptyCount)
+    local percentText = math.floor(percentage * 100) .. "%"
+    
+    return string.format("%s `[%d/%d]` (%s)", bar, current, max, percentText)
+end
+
 local function sendWebhook()
     -- Safely fetch UI elements and leaderstats with error handling
-    local success, eventCurrency, gold, level, bplevel, gems = pcall(function()
+    local success, eventCurrency, gold, level, bplevel, gems, bpExpBar = pcall(function()
         local mainGui = player.PlayerGui:WaitForChild("MainGui", 2)
         
         local ec = mainGui.MainFrames.EventStore.Main.Foreground.TopPanel.Currencies.EventCurrency.Button.Price.Amount.Text
@@ -14,7 +31,17 @@ local function sendWebhook()
         local bplvl = mainGui.MainFrames.Battlepass.Main.Foreground.RightPanel.Battlepass.TopFrame.Progress.Top.Level.TextLabel.Text
         local gem = mainGui.HUD.Currencies.Gem.Frame.amount.Text
         
-        return ec, g, lvl, bplvl, gem
+        -- Fetch raw experience string (e.g., "500/1000")
+        local rawExpText = mainGui.MainFrames.Battlepass.Main.Foreground.RightPanel.Battlepass.TopFrame.Progress.Top.Experience.TextLabel.Text
+        
+        -- Extract current and max experience numbers using string matching
+        local curExp, maxExp = rawExpText:match("(%d+)%s*/%s*(%d+)")
+        curExp = tonumber(curExp) or 0
+        maxExp = tonumber(maxExp) or 1000
+
+        local progressBar = createProgressBar(curExp, maxExp, 10)
+        
+        return ec, g, lvl, bplvl, gem, progressBar
     end)
 
     if not success then
@@ -22,7 +49,7 @@ local function sendWebhook()
         return
     end
 
-    -- Construct the payload for Discord matching your exact layout using inline fields
+    -- Construct the payload for Discord matching your exact layout
     local data = {
         ["content"] = "",
         ["embeds"] = {{
@@ -50,6 +77,11 @@ local function sendWebhook()
                     ["inline"] = true
                 },
                 {
+                    ["name"] = "BattlePass EXP",
+                    ["value"] = bpExpBar,
+                    ["inline"] = false
+                },
+                {
                     ["name"] = "Clams",
                     ["value"] = tostring(eventCurrency),
                     ["inline"] = true
@@ -70,21 +102,18 @@ local function sendWebhook()
 
     local jsonBody = HttpService:JSONEncode(data)
 
-    -- Send the request (Must be executed on the server, or with HttpEnabled / external proxy if client-side)
     local requestMethod = (syn and syn.request) or (http and http.request) or http_request
 
     if requestMethod then
-        -- Exploit/Executor environment request
         requestMethod({
-            Url = WEBHOOK_URL,
+            Url = getgenv().WEBHOOK_URL or WEBHOOK_URL,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = jsonBody
         })
     else
-        -- Standard Roblox Server-side request
         local successPost, err = pcall(function()
-            HttpService:PostAsync(getgenv().WEBHOOK_URL, jsonBody)
+            HttpService:PostAsync(getgenv().WEBHOOK_URL or WEBHOOK_URL, jsonBody)
         end)
         
         if not successPost then
