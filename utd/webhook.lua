@@ -29,7 +29,7 @@ local function sendWebhook()
             ["color"] = 65280, -- Green color
             ["fields"] = {
                 {
-                    ["name"] = "Event Currency Price",
+                    ["name"] = "Clams",
                     ["value"] = tostring(eventCurrency),
                     ["inline"] = true
                 },
