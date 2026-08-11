@@ -23,9 +23,9 @@ local function sendWebhook()
 
     -- Construct the payload for Discord (using an embed for clean formatting)
     local data = {
-        ["content"] = "",
+        ["content"] = "Arrived To Lobby",
         ["embeds"] = {{
-            ["title"] = "📊 Player Status Update",
+            ["title"] = "📊 Player Status",
             ["color"] = 65280, -- Green color
             ["fields"] = {
                 {
