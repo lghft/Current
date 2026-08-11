@@ -50,7 +50,7 @@ local function sendWebhook()
                 }
             },
             ["footer"] = {
-                ["text"] = "Player: " .. player.Name
+                ["text"] = "Player: |" .. player.Name .. "|"
             }
         }}
     }
