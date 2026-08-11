@@ -71,7 +71,7 @@ local function sendWebhook()
     else
         -- Standard Roblox Server-side request
         local successPost, err = pcall(function()
-            HttpService:PostAsync(WEBHOOK_URL, jsonBody)
+            HttpService:PostAsync(getgenv().WEBHOOK_URL, jsonBody)
         end)
         
         if not successPost then
