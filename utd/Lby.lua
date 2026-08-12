@@ -53,10 +53,30 @@ local eRtele = workspace.Lobby.SummerEventLobby.EventTeleporters.SummerEventRaid
 local dtele = workspace.Lobby.DungeonLobby.DungeonTeleporters.Teleporter1.Teleport.DisplayPart
 local stele = workspace.Lobby.ClassicPartyTeleporters.Teleporter2
 local ptyFind = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Main2.PartyFinder
+local dailyRewardGui = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.DailyReward
 local proximityThreshold = 50
 getgenv().TeleLoop = true
 getgenv().WEBHOOK_URL = "https://discord.com/api/webhooks/1414475376230535199/F6V5IZJkOUMdxd-ZdC32JdlaTw-FGDz-raRMGW7a6FsYTmYtRkqOSfLy123hat3xSNR1"
 loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/utd/webhook.lua'))()
+
+if dailyRewardGui.Visible == true then
+    local dailyRewardBtn = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.DailyReward.Frame.Claim
+    firesignal(dailyRewardBtn.Activated)
+end
+local function claimCalendarReward()
+    local calendarFrame = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Calendar.Main.Foreground.LeftFrame.ScrollingFrame
+    for _, Btn in ipairs(calendarFrame:GetChildren()) do
+        if Btn:IsA("TextButton") and Btn.Name ~= "TemplateSlot" then
+            local dayNumber = tonumber(Btn.Name)
+            if dayNumber then
+                local Event = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimCalendarReward
+                Event:FireServer(dayNumber)
+            end
+        end
+    end
+end
+claimCalendarReward()
+
 function missing(t, f, fallback)
 	if type(f) == t then return f end
 	return fallback
