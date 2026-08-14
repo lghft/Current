@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
 local towerFolder = game.Workspace:WaitForChild("EntityModels"):WaitForChild("Towers")
 
@@ -18,9 +19,118 @@ local currentTowerIndex = 0
 -- Global Toggles
 getgenv().Ability = false
 getgenv().Replay = true
-getgenv().Fps = false
+getgenv().Fps = true
 getgenv().Debug = true
 getgenv().Aizen = false
+
+-- ==========================================
+-- FORWARD DECLARATIONS (Scope Fix)
+-- ==========================================
+local LogContainer   -- ScrollingFrame that holds individual log entries
+
+-- ==========================================
+-- LOGGER SYSTEM (ported from UI.lua's Func:CreateLogger)
+-- One TextLabel per entry, queued through Heartbeat so entries are
+-- always created on the main thread no matter which thread logs.
+-- ==========================================
+local LoggerQueue = {
+    messages = {},      -- each entry: {text = string, color = Color3}
+    processing = false,
+    maxMessages = 500
+}
+
+-- Sticky-bottom auto-scroll: only snap to the newest entry if the user
+-- was already at (or near) the bottom before it was added. If they've
+-- scrolled up to read older entries, new entries won't yank them back down.
+local stickToBottom = true
+local isAutoScrolling = false
+local SCROLL_BOTTOM_SLACK = 12 -- px of slack still considered "at bottom"
+
+local function isLogScrolledToBottom()
+    local maxY = math.max(0, LogContainer.AbsoluteCanvasSize.Y - LogContainer.AbsoluteWindowSize.Y)
+    return LogContainer.CanvasPosition.Y >= (maxY - SCROLL_BOTTOM_SLACK)
+end
+
+local function scrollLogToBottom()
+    isAutoScrolling = true
+    LogContainer.CanvasPosition = Vector2.new(0, math.max(0, LogContainer.AbsoluteCanvasSize.Y))
+    isAutoScrolling = false
+end
+
+local Logger = {}
+
+function Logger:Log(text, color)
+    if not LogContainer then return end
+
+    local wasAtBottom = stickToBottom
+
+    local LogLabel = Instance.new("TextLabel")
+    LogLabel.Name = "LogEntry"
+    LogLabel.BackgroundTransparency = 1
+    LogLabel.Size = UDim2.new(1, 0, 0, 0)
+    LogLabel.AutomaticSize = Enum.AutomaticSize.Y
+    LogLabel.Font = Enum.Font.Code
+    LogLabel.Text = text
+    LogLabel.TextColor3 = color or Palette.TextPrimary
+    LogLabel.TextSize = 12
+    LogLabel.TextXAlignment = Enum.TextXAlignment.Left
+    LogLabel.TextWrapped = true
+    LogLabel.RichText = true
+    LogLabel.Parent = LogContainer
+
+    -- Trim oldest entries so the log doesn't grow unbounded
+    local entries = {}
+    for _, child in ipairs(LogContainer:GetChildren()) do
+        if child:IsA("TextLabel") then
+            table.insert(entries, child)
+        end
+    end
+    if #entries > LoggerQueue.maxMessages then
+        for i = 1, #entries - LoggerQueue.maxMessages do
+            entries[i]:Destroy()
+        end
+    end
+
+    if wasAtBottom then
+        -- Deferred so it runs after the list layout has resized the canvas
+        -- for the entry (and any trims) we just made.
+        task.defer(scrollLogToBottom)
+    end
+end
+
+function Logger:Clear()
+    for _, item in ipairs(LogContainer:GetChildren()) do
+        if item:IsA("TextLabel") then
+            item:Destroy()
+        end
+    end
+    stickToBottom = true
+    isAutoScrolling = true
+    LogContainer.CanvasPosition = Vector2.new(0, 0)
+    isAutoScrolling = false
+end
+
+local function SafeLogUpdate()
+    if LoggerQueue.processing or #LoggerQueue.messages == 0 then
+        return
+    end
+
+    LoggerQueue.processing = true
+
+    while #LoggerQueue.messages > 0 do
+        local entry = table.remove(LoggerQueue.messages, 1)
+        if entry then
+            pcall(function()
+                Logger:Log(entry.text, entry.color)
+            end)
+        end
+    end
+
+    LoggerQueue.processing = false
+end
+
+-- Process queue every frame on RunService (guaranteed main thread)
+RunService.Heartbeat:Connect(SafeLogUpdate)
 
 -- ==========================================
 -- DEBUG GUI & NOTIFY SYSTEM
@@ -33,14 +143,17 @@ local Palette = {
     Background   = Color3.fromRGB(20, 20, 27),
     Panel        = Color3.fromRGB(27, 27, 36),
     PanelAlt     = Color3.fromRGB(32, 32, 42),
+    PanelLight   = Color3.fromRGB(58, 58, 76),
     Stroke       = Color3.fromRGB(45, 45, 58),
     Accent       = Color3.fromRGB(124, 108, 255),
     AccentDim    = Color3.fromRGB(90, 79, 191),
     TextPrimary  = Color3.fromRGB(238, 238, 245),
     TextSecond   = Color3.fromRGB(150, 150, 165),
     Success      = Color3.fromRGB(88, 217, 168),
-    Danger       = Color3.fromRGB(235, 95, 95),
-    DangerDim    = Color3.fromRGB(190, 70, 70),
+    Warning      = Color3.fromRGB(230, 175, 80),
+    Danger       = Color3.fromRGB(200, 50, 50),
+    DangerLight  = Color3.fromRGB(250, 70, 70),
+    DangerDim    = Color3.fromRGB(200, 80, 80),
 }
 
 if CoreGui:FindFirstChild("MacroDebugGui") then
@@ -51,10 +164,10 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MacroDebugGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 2000
 ScreenGui.Parent = CoreGui
 ScreenGui.Enabled = getgenv().Debug
 
--- Small helper: rounded corner
 local function corner(radius, parent)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, radius)
@@ -62,7 +175,6 @@ local function corner(radius, parent)
     return c
 end
 
--- Small helper: hover highlight for icon buttons
 local function hoverHighlight(button, hoverColor)
     button.BackgroundTransparency = 1
     button.MouseEnter:Connect(function()
@@ -73,9 +185,134 @@ local function hoverHighlight(button, hoverColor)
     end)
 end
 
--- ==========================================
--- Restore Button (floating, shown when minimized)
--- ==========================================
+-- For buttons that should stay opaque at all times and only swap color on
+-- hover (rather than fading to transparent when the mouse leaves).
+local function hoverColorSwap(button, baseColor, hoverColor)
+    button.BackgroundColor3 = baseColor
+    button.BackgroundTransparency = 0
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+    end)
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = baseColor}):Play()
+    end)
+end
+
+-- Creates a small outline-only ring click effect
+local function addClickEffect(button, effectColor)
+    effectColor = effectColor or Palette.TextPrimary
+    button.ClipsDescendants = true
+
+    local existingCorner = button:FindFirstChildOfClass("UICorner")
+
+    local Flash = Instance.new("Frame")
+    Flash.Name = "ClickFlash"
+    Flash.Size = UDim2.new(1, 0, 1, 0)
+    Flash.BackgroundColor3 = effectColor
+    Flash.BackgroundTransparency = 1
+    Flash.BorderSizePixel = 0
+    Flash.ZIndex = button.ZIndex + 1
+    Flash.Parent = button
+    if existingCorner then
+        existingCorner:Clone().Parent = Flash
+    end
+
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            Flash.BackgroundTransparency = 0.7
+            TweenService:Create(Flash, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 1
+            }):Play()
+
+            local absPos = button.AbsolutePosition
+            local relX = input.Position.X - absPos.X
+            local relY = input.Position.Y - absPos.Y
+
+            local Ring = Instance.new("Frame")
+            Ring.Name = "ClickRing"
+            Ring.AnchorPoint = Vector2.new(0.5, 0.5)
+            Ring.Position = UDim2.new(0, relX, 0, relY)
+            -- Start very small (e.g., 10x10 pixels)
+            Ring.Size = UDim2.new(0, 10, 0, 10)
+            Ring.BackgroundTransparency = 1 -- No interior fill
+            Ring.BorderSizePixel = 0
+            Ring.ZIndex = button.ZIndex + 2
+            Ring.Parent = button
+            corner(9999, Ring)
+
+            -- Add a stroke to make it just an outline ring
+            local RingStroke = Instance.new("UIStroke")
+            RingStroke.Color = effectColor
+            RingStroke.Transparency = 0.3
+            RingStroke.Thickness = 2
+            RingStroke.Parent = Ring
+
+            -- Adjust maxDim to control how far the ring expands (change 60 to your preferred max size)
+            local maxDim = 60 
+            local ringTween = TweenService:Create(Ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, maxDim, 0, maxDim),
+            })
+            local strokeTween = TweenService:Create(RingStroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Transparency = 1,
+            })
+
+            ringTween:Play()
+            strokeTween:Play()
+
+            ringTween.Completed:Connect(function()
+                Ring:Destroy()
+            end)
+        end
+    end)
+end
+
+local function addSmallClickEffect(button, effectColor, ringSize)
+    effectColor = effectColor or Palette.TextPrimary
+    ringSize = ringSize or 35 -- Adjust this number to make the final ring smaller or larger
+    button.ClipsDescendants = true
+
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            local absPos = button.AbsolutePosition
+            local relX = input.Position.X - absPos.X
+            local relY = input.Position.Y - absPos.Y
+
+            local Ring = Instance.new("Frame")
+            Ring.Name = "ClickRing"
+            Ring.AnchorPoint = Vector2.new(0.5, 0.5)
+            Ring.Position = UDim2.new(0, relX, 0, relY)
+            Ring.Size = UDim2.new(0, 8, 0, 8) -- Starting tiny size
+            Ring.BackgroundTransparency = 1 -- No interior fill
+            Ring.BorderSizePixel = 0
+            Ring.ZIndex = button.ZIndex + 2
+            Ring.Parent = button
+            corner(9999, Ring)
+
+            local RingStroke = Instance.new("UIStroke")
+            RingStroke.Color = effectColor
+            RingStroke.Transparency = 0.3
+            RingStroke.Thickness = 1.5
+            RingStroke.Parent = Ring
+
+            local ringTween = TweenService:Create(Ring, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, ringSize, 0, ringSize),
+            })
+            local strokeTween = TweenService:Create(RingStroke, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Transparency = 1,
+            })
+
+            ringTween:Play()
+            strokeTween:Play()
+
+            ringTween.Completed:Connect(function()
+                Ring:Destroy()
+            end)
+        end
+    end)
+end
+
+
+-- Restore Button
 local RestoreBtn = Instance.new("TextButton")
 RestoreBtn.Name = "RestoreButton"
 RestoreBtn.Size = UDim2.new(0, 46, 0, 46)
@@ -95,16 +332,16 @@ RestoreStroke.Thickness = 1.5
 RestoreStroke.Transparency = 0.4
 RestoreStroke.Parent = RestoreBtn
 
--- ==========================================
+addClickEffect(RestoreBtn, Palette.Accent)
+
 -- Main Frame
--- ==========================================
 local FULL_SIZE = UDim2.new(0, 400, 0, 510)
 local COLLAPSED_SIZE = UDim2.new(0, 400, 0, 40)
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainWindow"
 MainFrame.Size = FULL_SIZE
-MainFrame.Position = UDim2.new(1, -420, 0.5, -250) -- Right side of screen
+MainFrame.Position = UDim2.new(1, -420, 0.5, -250) 
 MainFrame.BackgroundColor3 = Palette.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
@@ -125,7 +362,6 @@ TitleBar.BorderSizePixel = 0
 TitleBar.Parent = MainFrame
 corner(10, TitleBar)
 
--- Square off the bottom corners of the title bar so it reads as one solid bar
 local TitleBarMask = Instance.new("Frame")
 TitleBarMask.BackgroundColor3 = Palette.Panel
 TitleBarMask.BorderSizePixel = 0
@@ -133,7 +369,6 @@ TitleBarMask.Size = UDim2.new(1, 0, 0, 10)
 TitleBarMask.Position = UDim2.new(0, 0, 1, -10)
 TitleBarMask.Parent = TitleBar
 
--- Pulsing status dot
 local StatusDot = Instance.new("Frame")
 StatusDot.Size = UDim2.new(0, 8, 0, 8)
 StatusDot.Position = UDim2.new(0, 14, 0.5, -4)
@@ -163,7 +398,6 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 14
 Title.Parent = TitleBar
 
--- Window Controls (top right, sized to sit neatly inside the bar)
 local ControlsFrame = Instance.new("Frame")
 ControlsFrame.Name = "Controls"
 ControlsFrame.Size = UDim2.new(0, 114, 0, 32)
@@ -196,17 +430,18 @@ end
 
 local MinimizeBtn = makeIconButton("—", 1)
 hoverHighlight(MinimizeBtn, Palette.PanelAlt)
+addClickEffect(MinimizeBtn, Palette.TextPrimary)
 
 local CollapseBtn = makeIconButton("v", 2)
 hoverHighlight(CollapseBtn, Palette.PanelAlt)
+addClickEffect(CollapseBtn, Palette.TextPrimary)
 
 local CloseBtn = makeIconButton("X", 3)
 CloseBtn.TextColor3 = Palette.Danger
 hoverHighlight(CloseBtn, Color3.fromRGB(60, 32, 32))
+addClickEffect(CloseBtn, Palette.Danger)
 
--- ==========================================
 -- Body
--- ==========================================
 local Body = Instance.new("Frame")
 Body.Name = "Body"
 Body.Size = UDim2.new(1, -24, 1, -60)
@@ -214,7 +449,7 @@ Body.Position = UDim2.new(0, 12, 0, 50)
 Body.BackgroundTransparency = 1
 Body.Parent = MainFrame
 
--- Status card (Step + Replay)
+-- Status card
 local StatusCard = Instance.new("Frame")
 StatusCard.Size = UDim2.new(1, 0, 0, 62)
 StatusCard.BackgroundColor3 = Palette.Panel
@@ -257,7 +492,6 @@ ReplayLabel.Font = Enum.Font.Gotham
 ReplayLabel.TextSize = 13
 ReplayLabel.Parent = StatusCard
 
--- Log section header
 local LogHeader = Instance.new("TextLabel")
 LogHeader.Size = UDim2.new(1, 0, 0, 18)
 LogHeader.Position = UDim2.new(0, 0, 0, 70)
@@ -269,61 +503,48 @@ LogHeader.Font = Enum.Font.GothamMedium
 LogHeader.TextSize = 11
 LogHeader.Parent = Body
 
--- Log panel
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Name = "LogScroll"
-ScrollFrame.Size = UDim2.new(1, 0, 1, -140)
-ScrollFrame.Position = UDim2.new(0, 0, 0, 96)
-ScrollFrame.BackgroundColor3 = Palette.Panel
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-ScrollFrame.ScrollBarThickness = 8
-ScrollFrame.ScrollBarImageColor3 = Palette.Accent
-ScrollFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-ScrollFrame.Parent = Body
-corner(8, ScrollFrame)
+-- Log panel assignment (one entry per log line, ported from UI.lua's Logger)
+LogContainer = Instance.new("ScrollingFrame")
+LogContainer.Name = "LogScroll"
+LogContainer.Size = UDim2.new(1, 0, 1, -140)
+LogContainer.Position = UDim2.new(0, 0, 0, 96)
+LogContainer.BackgroundColor3 = Palette.Panel
+LogContainer.BorderSizePixel = 0
+LogContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+LogContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+LogContainer.ScrollingDirection = Enum.ScrollingDirection.Y
+LogContainer.ScrollBarThickness = 8
+LogContainer.ScrollBarImageColor3 = Palette.Accent
+LogContainer.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+LogContainer.Parent = Body
+corner(8, LogContainer)
 
--- NOTE: deliberately NOT using UIPadding on the ScrollingFrame itself.
--- UIPadding there fights with AutomaticCanvasSize's overflow measurement.
--- Padding is instead baked directly into LogLabel's own Size/Position,
--- leaving clear space on the right for the scrollbar track.
-local LogLabel = Instance.new("TextLabel")
-LogLabel.Name = "LogText"
-LogLabel.Size = UDim2.new(1, -32, 0, 0)
-LogLabel.Position = UDim2.new(0, 12, 0, 6)
-LogLabel.AutomaticSize = Enum.AutomaticSize.Y
-LogLabel.BackgroundTransparency = 1
-LogLabel.TextColor3 = Palette.TextPrimary
-LogLabel.TextXAlignment = Enum.TextXAlignment.Left
-LogLabel.TextYAlignment = Enum.TextYAlignment.Top
-LogLabel.Text = ""
-LogLabel.Font = Enum.Font.Code
-LogLabel.TextSize = 12
-LogLabel.TextWrapped = true
-LogLabel.Parent = ScrollFrame
+local LogListLayout = Instance.new("UIListLayout")
+LogListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+LogListLayout.Padding = UDim.new(0, 2)
+LogListLayout.Parent = LogContainer
 
--- Keep a reference under the old name so the rest of the script (Notify,
--- ClearBtn, etc.) doesn't need to change how it reads/writes log text.
-local LogBox = LogLabel
+local LogPadding = Instance.new("UIPadding")
+LogPadding.PaddingLeft = UDim.new(0, 12)
+LogPadding.PaddingRight = UDim.new(0, 20)
+LogPadding.PaddingTop = UDim.new(0, 6)
+LogPadding.Parent = LogContainer
 
--- AutomaticCanvasSize isn't reliably supported by every exploit client, and
--- when it silently no-ops the CanvasSize stays (0,0,0,0) forever, which is
--- why the scrollbar never showed up in-game. Compute it manually instead,
--- driven directly off the label's own AbsoluteSize so it always works.
-local function updateCanvasSize()
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, LogLabel.AbsoluteSize.Y + 12)
-end
-LogLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvasSize)
-updateCanvasSize()
+-- Track whether the user is at the bottom so new entries only auto-scroll
+-- when they haven't scrolled up to read something. Skips updates that were
+-- caused by our own auto-scroll, so it only reacts to real user input.
+LogContainer:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+    if isAutoScrolling then return end
+    stickToBottom = isLogScrolledToBottom()
+end)
 
--- Footer: Clear Logs
+-- Footer: Clear Logs + Scroll to Bottom
 local ClearBtn = Instance.new("TextButton")
-ClearBtn.Size = UDim2.new(1, 0, 0, 34)
+ClearBtn.Size = UDim2.new(0.5, -4, 0, 34)
 ClearBtn.Position = UDim2.new(0, 0, 1, -34)
 ClearBtn.Text = "Clear Logs"
 ClearBtn.BackgroundColor3 = Palette.PanelAlt
-ClearBtn.TextColor3 = Palette.Danger
+ClearBtn.TextColor3 = Palette.DangerLight
 ClearBtn.Font = Enum.Font.GothamMedium
 ClearBtn.TextSize = 13
 ClearBtn.AutoButtonColor = false
@@ -336,18 +557,31 @@ ClearStroke.Transparency = 0.5
 ClearStroke.Thickness = 1
 ClearStroke.Parent = ClearBtn
 
-hoverHighlight(ClearBtn, Palette.PanelAlt)
-ClearBtn.BackgroundTransparency = 0 -- keep footer visible at rest (override hover default)
-ClearBtn.MouseEnter:Connect(function()
-    TweenService:Create(ClearBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(48, 30, 30)}):Play()
-end)
-ClearBtn.MouseLeave:Connect(function()
-    TweenService:Create(ClearBtn, TweenInfo.new(0.15), {BackgroundColor3 = Palette.PanelAlt}):Play()
-end)
+hoverColorSwap(ClearBtn, Palette.Panel, Color3.fromRGB(48, 30, 30))
+addClickEffect(ClearBtn, Palette.Danger)
 
--- ==========================================
+local ScrollBottomBtn = Instance.new("TextButton")
+ScrollBottomBtn.Size = UDim2.new(0.5, -4, 0, 34)
+ScrollBottomBtn.Position = UDim2.new(0.5, 4, 1, -34)
+ScrollBottomBtn.Text = "↓ Bottom"
+ScrollBottomBtn.BackgroundColor3 = Palette.PanelLight
+ScrollBottomBtn.TextColor3 = Palette.Accent
+ScrollBottomBtn.Font = Enum.Font.GothamMedium
+ScrollBottomBtn.TextSize = 13
+ScrollBottomBtn.AutoButtonColor = false
+ScrollBottomBtn.Parent = Body
+corner(8, ScrollBottomBtn)
+
+local ScrollBottomStroke = Instance.new("UIStroke")
+ScrollBottomStroke.Color = Palette.AccentDim
+ScrollBottomStroke.Transparency = 0.5
+ScrollBottomStroke.Thickness = 1
+ScrollBottomStroke.Parent = ScrollBottomBtn
+
+hoverColorSwap(ScrollBottomBtn, Palette.Panel, Color3.fromRGB(45, 40, 70))
+addClickEffect(ScrollBottomBtn, Palette.Accent)
+
 -- Unload Confirmation Modal
--- ==========================================
 local Overlay = Instance.new("Frame")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.new(1, 0, 1, 0)
@@ -359,7 +593,7 @@ Overlay.Parent = MainFrame
 
 local UnloadMenu = Instance.new("Frame")
 UnloadMenu.Name = "UnloadMenu"
-UnloadMenu.Size = UDim2.new(0, 0, 0, 0) -- Starts scaled to 0 for tween
+UnloadMenu.Size = UDim2.new(0, 0, 0, 0) 
 UnloadMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
 UnloadMenu.AnchorPoint = Vector2.new(0.5, 0.5)
 UnloadMenu.BackgroundColor3 = Palette.Panel
@@ -410,6 +644,8 @@ CancelBtn.AutoButtonColor = false
 CancelBtn.ZIndex = 6
 CancelBtn.Parent = UnloadMenu
 corner(6, CancelBtn)
+hoverColorSwap(CancelBtn, Palette.PanelAlt, Palette.PanelLight)
+addClickEffect(CancelBtn, Palette.TextPrimary)
 
 local ConfirmBtn = Instance.new("TextButton")
 ConfirmBtn.Size = UDim2.new(0, 108, 0, 32)
@@ -423,12 +659,11 @@ ConfirmBtn.AutoButtonColor = false
 ConfirmBtn.ZIndex = 6
 ConfirmBtn.Parent = UnloadMenu
 corner(6, ConfirmBtn)
+hoverColorSwap(ConfirmBtn, Palette.Danger, Color3.fromRGB(150, 40, 40))
+addClickEffect(ConfirmBtn, Color3.fromRGB(255, 255, 255))
 
--- ==========================================
--- Drag support (move the window by its title bar)
--- ==========================================
+-- Drag support
 local UserInputService = game:GetService("UserInputService")
-
 local dragging = false
 local dragStartInput, dragStartPos
 
@@ -459,14 +694,9 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ==========================================
--- BUTTON LOGIC & TWEENS
--- ==========================================
-
--- Minimize Button (shrinks the window down into the floating restore button, then hides it)
+-- Minimize Button
 local MinimizeTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
 local RestoreTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
 local savedPosition = MainFrame.Position
 local savedSize = MainFrame.Size
 local minimizeAnimating = false
@@ -474,12 +704,9 @@ local minimizeAnimating = false
 MinimizeBtn.MouseButton1Click:Connect(function()
     if minimizeAnimating then return end
     minimizeAnimating = true
-
-    -- Remember where the window currently is/was sized (it may have been dragged or collapsed)
     savedPosition = MainFrame.Position
     savedSize = MainFrame.Size
 
-    -- Shrink toward the center of the floating restore button
     local targetPos = UDim2.new(
         RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + RestoreBtn.Size.X.Offset / 2,
         RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + RestoreBtn.Size.Y.Offset / 2
@@ -495,18 +722,13 @@ MinimizeBtn.MouseButton1Click:Connect(function()
 
     minimizeTween.Completed:Connect(function()
         MainFrame.Visible = false
-
-        -- Reset the frame back to its real size/position/opacity so it's ready to be restored
         MainFrame.Size = savedSize
         MainFrame.Position = savedPosition
         MainFrame.BackgroundTransparency = 0
         MainStroke.Transparency = 0
-
-        -- Pop the restore button in
         RestoreBtn.Visible = true
         RestoreBtn.Size = UDim2.new(0, 0, 0, 0)
         TweenService:Create(RestoreBtn, RestoreTweenInfo, {Size = UDim2.new(0, 46, 0, 46)}):Play()
-
         minimizeAnimating = false
     end)
 end)
@@ -514,13 +736,11 @@ end)
 RestoreBtn.MouseButton1Click:Connect(function()
     if minimizeAnimating then return end
     minimizeAnimating = true
-
     local restoreBtnHalfW = RestoreBtn.Size.X.Offset / 2
     local restoreBtnHalfH = RestoreBtn.Size.Y.Offset / 2
     local shrinkTween = TweenService:Create(RestoreBtn, MinimizeTweenInfo, {Size = UDim2.new(0, 0, 0, 0)})
     shrinkTween:Play()
 
-    -- Grow back out from the restore button's position
     local startPos = UDim2.new(
         RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + restoreBtnHalfW,
         RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + restoreBtnHalfH
@@ -541,15 +761,12 @@ RestoreBtn.MouseButton1Click:Connect(function()
 
     shrinkTween.Completed:Connect(function()
         RestoreBtn.Visible = false
-        RestoreBtn.Size = UDim2.new(0, 46, 0, 46) -- reset so it's ready for next minimize
+        RestoreBtn.Size = UDim2.new(0, 46, 0, 46) 
         minimizeAnimating = false
     end)
 end)
 
 -- Collapse Button
--- MainFrame uses the default AnchorPoint (0, 0), so its Position is always
--- its TOP-left corner and only tweening Size means the frame collapses
--- downward from a fixed top edge, leaving only the title bar visible.
 local isCollapsed = false
 local bodyElements = {Body}
 
@@ -560,8 +777,6 @@ CollapseBtn.MouseButton1Click:Connect(function()
         for _, element in ipairs(bodyElements) do
             element.Visible = false
         end
-        -- With no body left below it, the mask would otherwise square off
-        -- MainFrame's own bottom corners instead of just the title bar's.
         TitleBarMask.Visible = false
         TweenService:Create(MainFrame, TweenInf, {Size = COLLAPSED_SIZE}):Play()
     else
@@ -579,7 +794,7 @@ CollapseBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Close Button (X) - Open unload confirmation
+-- Close / Clear
 CloseBtn.MouseButton1Click:Connect(function()
     Overlay.Visible = true
     UnloadMenu.Visible = true
@@ -587,7 +802,6 @@ CloseBtn.MouseButton1Click:Connect(function()
     TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 246, 0, 118)}):Play()
 end)
 
--- Cancel Close
 CancelBtn.MouseButton1Click:Connect(function()
     TweenService:Create(Overlay, TweenInf, {BackgroundTransparency = 1}):Play()
     local tween = TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 0, 0, 0)})
@@ -597,17 +811,20 @@ CancelBtn.MouseButton1Click:Connect(function()
     Overlay.Visible = false
 end)
 
--- Confirm Close
 ConfirmBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
     getgenv().Debug = false
 end)
 
 ClearBtn.MouseButton1Click:Connect(function()
-    LogBox.Text = ""
+    Logger:Clear()
 end)
 
--- Background loop to check toggle status
+ScrollBottomBtn.MouseButton1Click:Connect(function()
+    stickToBottom = true
+    scrollLogToBottom()
+end)
+
 task.spawn(function()
     while task.wait(1) do
         if not getgenv().Debug and ScreenGui then
@@ -627,37 +844,143 @@ end
 local function Notify(logType, message)
     local timeStamp = os.date("[%I:%M:%S %p]")
     local icon = ""
+    local color = Palette.TextPrimary
 
     logType = string.lower(tostring(logType))
 
     if logType == "print" then
         icon = "[INFO]"
+        color = Palette.TextPrimary
         print(message)
     elseif logType == "warn" then
         icon = "[WARN]"
+        color = Palette.Warning
         warn(message)
     elseif logType == "error" then
         icon = "[ERROR]"
+        color = Palette.Danger
         warn("[ERROR]: " .. message)
     else
         icon = "[INFO]"
+        color = Palette.TextPrimary
         print(message)
     end
 
     local formattedMessage = string.format("%s %s: %s", timeStamp, icon, tostring(message))
 
-    if LogBox.Text == "" then
-        LogBox.Text = formattedMessage
-    else
-        LogBox.Text = LogBox.Text .. "\n" .. formattedMessage
+    if #LoggerQueue.messages < LoggerQueue.maxMessages then
+        table.insert(LoggerQueue.messages, {text = formattedMessage, color = color})
+    end
+end
+
+
+
+if CoreGui:FindFirstChild("FpsModeOverlay") then
+    CoreGui:FindFirstChild("FpsModeOverlay"):Destroy()
+end
+if CoreGui:FindFirstChild("FpsToggleGui") then
+    CoreGui:FindFirstChild("FpsToggleGui"):Destroy()
+end
+
+local FpsToggleBtn -- forward declared; assigned when the button is created below
+local FpsOverlayGui = nil -- created lazily the first time Fps mode is turned on; never destroyed after
+
+local function ensureFpsOverlay()
+    if FpsOverlayGui then return end
+
+    FpsOverlayGui = Instance.new("ScreenGui")
+    FpsOverlayGui.Name = "FpsModeOverlay"
+    FpsOverlayGui.ResetOnSpawn = false
+    FpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    FpsOverlayGui.DisplayOrder = 999 -- below the toggle button's ScreenGui
+    FpsOverlayGui.IgnoreGuiInset = true -- no gap at the top; covers the entire screen
+    FpsOverlayGui.Parent = CoreGui
+
+    local Cover = Instance.new("Frame")
+    Cover.Name = "Cover"
+    Cover.Size = UDim2.new(1, 0, 1, 0)
+    Cover.BackgroundColor3 = Palette.Background
+    Cover.BorderSizePixel = 0
+    Cover.ZIndex = 1
+    Cover.Parent = FpsOverlayGui
+
+    local CoverLabel = Instance.new("TextLabel")
+    CoverLabel.Size = UDim2.new(1, 0, 0, 30)
+    CoverLabel.Position = UDim2.new(0, 0, 1, -40)
+    CoverLabel.BackgroundTransparency = 1
+    CoverLabel.Text = "FPS Mode Enabled - 3D Rendering Off"
+    CoverLabel.TextColor3 = Palette.TextSecond
+    CoverLabel.Font = Enum.Font.GothamMedium
+    CoverLabel.TextSize = 13
+    CoverLabel.ZIndex = 1
+    CoverLabel.Parent = Cover
+end
+
+local function setFpsMode(state)
+    getgenv().Fps = state
+
+    local ok, err = pcall(function()
+        RunService:Set3dRenderingEnabled(not state)
+    end)
+    if not ok then
+        Notify("Warn", "[FPS Mode] Set3dRenderingEnabled unavailable on this executor: " .. tostring(err))
     end
 
-    ScrollFrame.CanvasPosition = Vector2.new(0, 999999)
+    if state then
+        ensureFpsOverlay()
+        FpsOverlayGui.Enabled = true
+    elseif FpsOverlayGui then
+        FpsOverlayGui.Enabled = false
+    end
+
+    if FpsToggleBtn then
+        FpsToggleBtn.Text = state and "FPS: ON" or "FPS: OFF"
+        FpsToggleBtn.TextColor3 = state and Palette.Success or Palette.TextSecond
+    end
+
+    Notify("Print", "[FPS Mode] " .. (state and "Enabled" or "Disabled"))
 end
--- ==========================================
+
+-- Own ScreenGui so this button survives even if MacroDebugGui is unloaded
+local FpsButtonGui = Instance.new("ScreenGui")
+FpsButtonGui.Name = "FpsToggleGui"
+FpsButtonGui.ResetOnSpawn = false
+FpsButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+FpsButtonGui.DisplayOrder = 1000 -- always above the overlay
+FpsButtonGui.IgnoreGuiInset = true
+FpsButtonGui.Parent = CoreGui
+
+FpsToggleBtn = Instance.new("TextButton")
+FpsToggleBtn.Name = "FpsToggleButton"
+FpsToggleBtn.Size = UDim2.new(0, 90, 0, 30)
+FpsToggleBtn.AnchorPoint = Vector2.new(0.5, 0)
+FpsToggleBtn.Position = UDim2.new(0.5, 0, 0, 14)
+FpsToggleBtn.BackgroundColor3 = Palette.Panel
+FpsToggleBtn.AutoButtonColor = false
+FpsToggleBtn.Text = "FPS: OFF"
+FpsToggleBtn.TextColor3 = Palette.TextSecond
+FpsToggleBtn.Font = Enum.Font.GothamMedium
+FpsToggleBtn.TextSize = 13
+FpsToggleBtn.Parent = FpsButtonGui
+corner(8, FpsToggleBtn)
+
+local FpsToggleStroke = Instance.new("UIStroke")
+FpsToggleStroke.Color = Palette.Accent
+FpsToggleStroke.Thickness = 1
+FpsToggleStroke.Transparency = 0.5
+FpsToggleStroke.Parent = FpsToggleBtn
+
+hoverColorSwap(FpsToggleBtn, Palette.Panel, Palette.PanelAlt)
+addSmallClickEffect(FpsToggleBtn, Palette.Accent, 12)
+
+FpsToggleBtn.MouseButton1Click:Connect(function()
+    setFpsMode(not getgenv().Fps)
+end)
+if getgenv().Fps == true then
+    setFpsMode(getgenv().Fps)
+end
 
 
--- Function to dynamically fetch tower IDs from the Hotbar
 local function updateHotbarTowers()
     table.clear(hotbarTowerIDs)
     local hBar = LocalPlayer.PlayerGui:WaitForChild("MainGui"):WaitForChild("HUD"):WaitForChild("Toolbox"):WaitForChild("Hotbar")
@@ -675,7 +998,6 @@ local function updateHotbarTowers()
     end
 end
 
--- Non-blocking asynchronous listener for tower placement confirmations
 task.spawn(function()
     Notify("Print", "[Init] Waiting for TowerPlacedSuccessfully remote to exist...")
     
@@ -871,6 +1193,11 @@ function autoTowerAbility(towerIndex, interval)
                 task.wait(1) 
             end
         end
+        -- Always clear the flag here, whatever caused the loop to exit
+        -- (Ability toggled off, tower gone, or an explicit stop). Without
+        -- this, a leftover `true` blocks autoTowerAbility from ever
+        -- restarting this tower on the next match.
+        activeAutoAbilities[towerIndex] = false
         Notify("Print", string.format("[AutoAbility] Loop ended for Tower Index: %d", towerIndex))
     end)
 end
