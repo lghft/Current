@@ -1,6 +1,6 @@
 print("lby?")
 getgenv().IsLDLD = true
-getgenv().Active = "eventhard"
+getgenv().Active = "dun"
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -21,7 +21,6 @@ task.spawn(function()
     end)
 end)
 
--- Safer way to wait for GUI elements with proper error handling
 local function waitForGui(timeout)
     timeout = timeout or 30
     local startTime = tick()
@@ -44,7 +43,6 @@ end
 
 waitForGui(120)
 print("Lby Loaded! hell yeah!")
-
 local char = game.Players.LocalPlayer.Character
 local Players = game:GetService('Players')
 local plrAmount = #Players:GetPlayers()
@@ -153,25 +151,77 @@ if plrAmount == 1 and game.Players.LocalPlayer and game.Workspace.Lobby and plrA
         end
     elseif dtele and getgenv().Active == "dun" then
         task.wait(1)
+        local flrs = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.FloorSelection.MapList.ScrollingFrame
+            local highestNumber = 0
+            local highestFloorButton = nil
+            for _, flr in pairs(flrs:GetChildren()) do
+                if flr:IsA("ImageButton") and flr.Locked.Visible ~= true then
+                    local floorNumber = tonumber(flr.Name:match("%d+"))
+                    if floorNumber then
+                        if floorNumber > highestNumber then
+                            highestNumber = floorNumber
+                            highestFloorButton = flr
+                        end
+                    end
+                end
+            end
+            local LoadoutEvent = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerEquipLoadout
+
+
+            if highestNumber >= 1 and highestNumber <= 20 then
+                print("Floor is lower than 20: ", highestNumber)
+                LoadoutEvent:FireServer(1)
+            elseif highestNumber >= 21 and highestNumber <= 30 then
+                print("Floor is higher than 21: ", highestNumber)
+                LoadoutEvent:FireServer(2)
+            elseif highestNumber >= 31 and highestNumber <= 39 then
+                print("Floor is higher than 31: ", highestNumber)
+                LoadoutEvent:FireServer(3)
+            elseif highestNumber == 40 then
+                print("Reached Floor 40")
+                LoadoutEvent:FireServer(3)
+                --game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("GlobalInit"):WaitForChild("RemoteEvents"):WaitForChild("PlayerClaimDungeonReward"):FireServer()
+            end
         local success = pcall(function()
             local dunMap = game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.FloorSelection.SelectedMap.MapName
+            --[[
             if dunMap.Text == "Forsaken Prison - Floor 10" or dunMap.Text == "Forsaken Prison - Floor 9" or dunMap.Text == "Desolate Crypt - Floor 11" then
                 game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("GlobalInit"):WaitForChild("RemoteEvents"):WaitForChild("PlayerClaimDungeonReward"):FireServer()
                 print("YESSS Collected...")
             end
+            ]]
+            
         end)
         if not success then warn("Failed to check dungeon reward") end
         
         task.wait()
         print("=1 dun")
-        wait()
-        if char:FindFirstChild("PrimaryPart") then
-            char.PrimaryPart.CFrame = CFrame.new(43.3874359, -23.1395016, 4058.01099, -0.766061664, 0, 0.642767608, 0, 1, 0, -0.642767608, 0, -0.766061664)
-        end
+        task.wait()
+        task.spawn(function()
+            while getgenv().TeleLoop == true do
+                task.wait(1)
+                local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                local targetPos = dtele.Position
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if not humanoidRoot then break end
+                
+                local distance = (humanoidRoot.Position - targetPos).Magnitude
+                
+                if distance <= proximityThreshold then
+                    getgenv().TeleLoop = false
+                    print("telsse Loop Breeak!?#")
+                    break
+                else
+                    if hrp then
+                        hrp.CFrame = CFrame.new(dtele.Position)
+                    end
+                end
+            end
+        end)
         
         local floorSelection = safeGetGui({game:GetService("Players").LocalPlayer.PlayerGui, "MainGui", "MainFrames", "FloorSelection"}, 10)
         if floorSelection then
-            repeat wait() until floorSelection.Visible == true
+            repeat task.wait() until floorSelection.Visible == true
             local hard = floorSelection:FindFirstChild("SelectedMap") and floorSelection.SelectedMap:FindFirstChild("Buttons") and floorSelection.SelectedMap.Buttons:FindFirstChild("HardcoreButton")
             if hard then
                 firesignal(hard.Activated)
@@ -185,8 +235,8 @@ if plrAmount == 1 and game.Players.LocalPlayer and game.Workspace.Lobby and plrA
             else
                 warn("HardcoreButton not found")
             end
-        else
-            warn("FloorSelection GUI not found")
+        elseif highestNumber == 40 then
+            print("Stopped At floor 40")
         end
     elseif stele and getgenv().Active == "story" then
         print("=1 story")
