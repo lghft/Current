@@ -1,22 +1,34 @@
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-
-local player = Players.LocalPlayer
-local pchar = player.Character or player.CharacterAdded:Wait()
-
--- Your custom getRoot function
-local function getRoot(char)
-	if char and char:FindFirstChildOfClass("Humanoid") then
-		return char:FindFirstChildOfClass("Humanoid").RootPart
-	else
-		return nil
-	end
+function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
 end
 
--- Your custom randomString function
-local function randomString()
-	local length = math.random(10, 20)
+cloneref = missing("function", cloneref, function(...) return ... end)
+firetouchinterest = missing("function", firetouchinterest)
+
+Services = setmetatable({}, {
+	__index = function(self, name)
+		local success, cache = pcall(function()
+			return cloneref(game:GetService(name))
+		end)
+		if success then
+			rawset(self, name, cache)
+			return cache
+		else
+			error("Invalid Service: " .. tostring(name))
+		end
+	end
+})
+RunService = Services.RunService
+UserInputService = Services.UserInputService
+local speaker = game.Players.LocalPlayer
+local beganListener: RBXScriptConnection
+local endListener: RBXScriptConnection
+local floatingFunc: RBXScriptConnection
+local pchar = speaker.Character
+
+function randomString()
+	local length = math.random(10,20)
 	local array = {}
 	for i = 1, length do
 		array[i] = string.char(math.random(32, 126))
@@ -24,74 +36,87 @@ local function randomString()
 	return table.concat(array)
 end
 
--- Simple notification fallback if none exists
-local function notify(title, text)
-	print("[" .. title .. "]: " .. text)
+function getRoot(char)
+	if char and char:FindFirstChildOfClass("Humanoid") then
+		return char:FindFirstChildOfClass("Humanoid").RootPart
+	else
+		return nil
+	end
 end
 
-local floatName = randomString()
-local floating = true
-local floatingFunc, beganListener, endListener, floatDied
+pcall(function() Noclipping:Disconnect() end)
+
+Clip = false
+task.wait(0.1)
+NoclipParts = {}
+Noclipping = RunService.Stepped:Connect(function()
+    if Clip == false and speaker.Character ~= nil then
+        for _, child in pairs(speaker.Character:GetDescendants()) do
+            if child:IsA("BasePart") and child.CanCollide == true and child.Name ~= floatName then
+                child.CanCollide = false
+                NoclipParts[child] = true
+            end
+        end
+    end
+end)
+
+floating = false
+
+floatName = randomString()
+floating = true
 
 if pchar and not pchar:FindFirstChild(floatName) then
-	task.spawn(function()
-		local floatPoint = -3.1
-		local floatPart = Instance.new("Part")
-		floatPart.Name = floatName
-		floatPart.Parent = pchar
-		floatPart.Transparency = 1
-		floatPart.Size = Vector3.new(2, 0.2, 1.5)
-		floatPart.Anchored = true
-		
-		notify("Float", "Started floating (Q = down & E = up)")
-		
-		beganListener = UserInputService.InputBegan:Connect(function(key, processed)
-			if processed then return end
+    task.spawn(function()
+        local floatPoint = -3.1
+        local floatPart = Instance.new('Part')
+        floatPart.Name = floatName
+        floatPart.Parent = pchar
+        floatPart.Transparency = 1
+        floatPart.Size = Vector3.new(2, 0.2, 1.5)
+        floatPart.Anchored = true
+        
+        beganListener = UserInputService.InputBegan:Connect(function(key, processed)
+            if processed then return end
 
-			if key.KeyCode == Enum.KeyCode.Q then
-				floatPoint -= 0.5
-			end
-			if key.KeyCode == Enum.KeyCode.E then
-				floatPoint += 1.5
-			end
-		end)
-		
-		endListener = UserInputService.InputEnded:Connect(function(key, processed)
-			if processed then return end
+            if key.KeyCode == Enum.KeyCode.Q then
+                floatPoint -= 0.5
+            end
+            if key.KeyCode == Enum.KeyCode.E then
+                floatPoint += 1.5
+            end
+        end)
+        endListener = UserInputService.InputEnded:Connect(function(key, processed)
+            if processed then return end
 
-			if key.KeyCode == Enum.KeyCode.Q then
-				floatPoint += 0.5
-			end
-			if key.KeyCode == Enum.KeyCode.E then
-				floatPoint -= 1.5
-			end
-		end)
-		
-		local humanoid = pchar:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			floatDied = humanoid.Died:Connect(function()
-				if floatingFunc then floatingFunc:Disconnect() end
-				floatPart:Destroy()
-				if floatDied then floatDied:Disconnect() end
-				if beganListener then beganListener:Disconnect() end
-				if endListener then endListener:Disconnect() end
-				floatName = nil
-			end)
-		end
-		
-		local function floatPadLoop()
-			if pchar:FindFirstChild(floatName) and getRoot(pchar) then
-				floatPart.CFrame = getRoot(pchar).CFrame * CFrame.new(0, floatPoint, 0)
-			else
-				if floatingFunc then floatingFunc:Disconnect() end
-				floatPart:Destroy()
-				if floatDied then floatDied:Disconnect() end
-				if beganListener then beganListener:Disconnect() end
-				if endListener then endListener:Disconnect() end
-				floatName = nil
-			end
-		end			
-		
-		floatingFunc = RunService.RenderStepped:Connect(floatPadLoop)
-	end)
+            if key.KeyCode == Enum.KeyCode.Q then
+                floatPoint += 0.5
+            end
+            if key.KeyCode == Enum.KeyCode.E then
+                floatPoint -= 1.5
+            end
+        end)
+        
+        floatDied = speaker.Character:FindFirstChildOfClass('Humanoid').Died:Connect(function()
+            floatingFunc:Disconnect()
+            floatPart:Destroy()
+            floatDied:Disconnect()
+            beganListener:Disconnect()
+            endListener:Disconnect()
+            floatName = nil
+        end)
+        local function floatPadLoop()
+            if pchar:FindFirstChild(floatName) and getRoot(pchar) then
+                floatPart.CFrame = getRoot(pchar).CFrame * CFrame.new(0, floatPoint, 0)
+            else
+                floatingFunc:Disconnect()
+                floatPart:Destroy()
+                floatDied:Disconnect()
+                beganListener:Disconnect()
+                endListener:Disconnect()
+                floatName = nil
+            end
+        end			
+        floatingFunc = RunService.PreAnimation:Connect(floatPadLoop)
+    end)
 end
+
