@@ -1695,7 +1695,7 @@ local function tempMacro()
                     
                     Notify("print", "[Macro] Waiting for new match DifficultyVote GUI...")
                     task.wait(5)
-                    task.spawn(TemplateMacro)
+                    task.spawn(tempMacro)
                 else
                     UpdateMacroStep("Returning to Lobby")
                     local RespondRemote = ReplicatedStorage.Modules.Remotes.RemoteEvent.RespondToQuery
