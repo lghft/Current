@@ -277,3 +277,5 @@ local function hardMacro()
         end
     end)
 end
+
+hardMacro()
