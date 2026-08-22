@@ -2,7 +2,7 @@ repeat task.wait() until game:IsLoaded()
 local StarterGui = game:GetService("StarterGui")
 local gameId = game.GameId
 local function SmartTeleportToLobby()
-    local lobbyId = 3260590327
+    local lobbyId = 131367064230486
     pcall(function()
         local platform = UserInputService:GetPlatform()
         local IsMobile = (platform == Enum.Platform.IOS or platform == Enum.Platform.Android)
