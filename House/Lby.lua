@@ -162,7 +162,7 @@ if promptPart then
     platform.CFrame = CFrame.new(platPos)
     platform.Transparency = 0.3 -- Semi-transparent so you can see through
     platform.Parent = workspace
-    task.wait(1)
+    task.wait()
     print("created platform?")
     while getgenv().TeleLoop do
     task.wait()
