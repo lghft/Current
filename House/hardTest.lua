@@ -1673,9 +1673,9 @@ local function hardMacro()
         placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--11
         placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--12
         --3 duchess
-        placeTower(4,Vector3.new(9646.09035, -24.508, -117.627968),1)--13
-        placeTower(4,Vector3.new(9646.09035, -24.508, -117.627968),1)--14
-        placeTower(4,Vector3.new(9646.09035, -24.508, -117.627968),1)--15
+        placeTower(4,Vector3.new(9628, -24, -107),1)--13
+        placeTower(4,Vector3.new(9628, -24, -107),1)--14
+        placeTower(4,Vector3.new(9628, -24, -107),1)--15
         towerAnimcCheck()
     end
 
