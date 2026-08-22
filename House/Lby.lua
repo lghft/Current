@@ -54,6 +54,7 @@ local proximityThreshold = 10 -- Adjust this distance as needed
 
 getgenv().Floor = 4
 getgenv().Stage = 4 -- Acts as the "Room" variable
+getgenv().Walk = true
 
 local function waitForGui(timeout)
     timeout = timeout or 30
@@ -110,7 +111,7 @@ LoadFlr:InvokeServer("Story", tonumber(getgenv().Floor))
 print("ld flr")
 task.wait()
 local MovFlr = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.MoveToFloor
-MovFlr:FireServer("Story", tonumber(getgenv().Floor))
+MovFlr:FireServer("Story", tonumber(getgenv().Floor),tonumber(getgenv().Stage))
 local SetEle = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.SetInElevator
 SetEle:FireServer(false)
 task.wait()
@@ -163,9 +164,8 @@ end
 local promptPart = getTargetPromptPart(getgenv().Floor, getgenv().Stage)
 print(promptPart)
 local proximityPrompt = nil
-
+--[[
 local exitPart = workspace._Floors.Floor4["Story#Floor4Elevator"].Exit
-
 repeat
     task.wait(0.1)
     local char = player.Character
@@ -179,58 +179,98 @@ repeat
 until (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - exitPart.CFrame.Position).Magnitude <= proximityThreshold)
 
 print("Player is close to Exit!")
+]]
 
 if promptPart then
     proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
     
-    -- Calculate position 20 studs below the Prompt's WorldCFrame
     local targetPos = promptPart.WorldCFrame.Position
     getgenv().TeleLoop = true
-    local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
-    local platform = Instance.new("Part")
-    platform.Name = "dgdfghrthhfgplatform"
-    platform.Shape = Enum.PartType.Block
-    platform.Size = Vector3.new(10, 1, 10) -- 10x1x10 studs
-    platform.Color = Color3.fromRGB(0, 255, 0) -- Green
-    platform.Material = Enum.Material.Neon
-    platform.CanCollide = true
-    platform.CFrame = CFrame.new(platPos)
-    platform.Transparency = 0.3 -- Semi-transparent so you can see through
-    platform.Parent = workspace
-    task.wait(1)
-    print("created platform?")
-    while getgenv().TeleLoop do
-    task.wait()
-    local char = player.Character
-    if not char then continue end
-    local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoidRoot or not humanoid then continue end
     
-    local distance = (humanoidRoot.Position - targetPos).Magnitude
-    if distance <= proximityThreshold then
-        getgenv().TeleLoop = false
-        print("Teleport loop broken successfully at dynamic target!")
-        break
-    else
-        -- Reset velocity to prevent physics from pulling back
-        humanoidRoot.Velocity = Vector3.new(0, 0, 0)
-        humanoidRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        
-        -- Set humanoid state to prevent interference
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        
-        -- Teleport
-        task.spawn(function()
-            humanoidRoot.CFrame = CFrame.new(targetPos)
-            task.wait()
-        end)
-        
-        print("teleported? Distance: " .. tostring(distance))
+    -- Only create platform if using teleport mode
+    local platform
+    if not getgenv().Walk then
+        local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
+        platform = Instance.new("Part")
+        platform.Name = "dgdfghrthhfgplatform"
+        platform.Shape = Enum.PartType.Block
+        platform.Size = Vector3.new(10, 1, 10)
+        platform.Color = Color3.fromRGB(0, 255, 0)
+        platform.Material = Enum.Material.Neon
+        platform.CanCollide = true
+        platform.CFrame = CFrame.new(platPos)
+        platform.Transparency = 0.3
+        platform.Parent = workspace
+        task.wait(1)
+        print("created platform?")
     end
-end
+    
+    if getgenv().Walk == true then
+        -- WALK MODE
+        local char = player.Character
+        if char then
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid:MoveTo(targetPos)
+                print("Walking to target position...")
+                
+                -- Wait for walk to complete
+                local walkTimeout = tick() + 120 -- 2 minute timeout
+                repeat
+                    task.wait(0.1)
+                    char = player.Character
+                    if not char then break end
+                    local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                    if humanoidRoot then
+                        local distance = (humanoidRoot.Position - targetPos).Magnitude
+                        if distance <= proximityThreshold then
+                            print("Reached target! Distance: " .. tostring(distance))
+                            getgenv().TeleLoop = false
+                            break
+                        end
+                        -- Give another walk command if humanoid stopped too early
+                        if humanoid.MoveState == Enum.HumanoidStateType.Running or humanoid.MoveState == Enum.HumanoidStateType.Landed then
+                            humanoid:MoveTo(targetPos)
+                        end
+                    end
+                    if tick() > walkTimeout then
+                        warn("Walk timeout! Fell back to teleport.")
+                        break
+                    end
+                until false
+            end
+        end
+    else
+        -- TELEPORT MODE (original logic)
+        while getgenv().TeleLoop do
+            task.wait()
+            local char = player.Character
+            if not char then continue end
+            local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char:FindFirstChild("Humanoid")
+            if not humanoidRoot or not humanoid then continue end
+            
+            local distance = (humanoidRoot.Position - targetPos).Magnitude
+            if distance <= proximityThreshold then
+                getgenv().TeleLoop = false
+                print("Teleport loop broken successfully at dynamic target!")
+                break
+            else
+                humanoidRoot.Velocity = Vector3.new(0, 0, 0)
+                humanoidRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+                humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+                
+                task.spawn(function()
+                    humanoidRoot.CFrame = CFrame.new(targetPos)
+                    task.wait()
+                end)
+                
+                print("teleported? Distance: " .. tostring(distance))
+            end
+        end
+    end
 else
     warn("Could not locate the prompt for Floor: " .. tostring(getgenv().Floor) .. " Room: " .. tostring(getgenv().Stage))
 end
