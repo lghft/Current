@@ -1,6 +1,48 @@
 repeat task.wait() until game:IsLoaded()
 local StarterGui = game:GetService("StarterGui")
 local gameId = game.GameId
+local function SmartTeleportToLobby()
+    local lobbyId = 3260590327
+    pcall(function()
+        local platform = UserInputService:GetPlatform()
+        local IsMobile = (platform == Enum.Platform.IOS or platform == Enum.Platform.Android)
+        
+        if not IsMobile and Globals.PrivateCode and Globals.PrivateCode ~= "" then
+            game:GetService("ExperienceService"):LaunchExperience({
+                placeId = lobbyId, 
+                linkCode = Globals.PrivateCode
+            })
+        else
+            TeleportService:Teleport(lobbyId)
+        end
+    end)
+end
+task.spawn(function()
+    local RunService = game:GetService("RunService")
+    local FPS_THRESHOLD = 6 -- consider "low fps" below this value
+    local CHECK_INTERVAL = 1 -- how often (in seconds) to evaluate FPS
+    local frameCount = 0
+    local elapsedTime = 0
+    RunService.Heartbeat:Connect(function(deltaTime)
+        frameCount += 1
+        elapsedTime += deltaTime
+
+        if elapsedTime >= CHECK_INTERVAL then
+            local fps = frameCount / elapsedTime
+
+            if fps < FPS_THRESHOLD then
+                print(string.format("Low FPS detected: %.1f fps", fps))
+                SmartTeleportToLobby()
+            end
+
+            -- reset counters for the next interval
+            frameCount = 0
+            elapsedTime = 0
+        end
+    end)
+end)
+
+
 repeat task.wait() until gameId == 10463578886 and workspace:WaitForChild("_Scenes"):WaitForChild("Lobby")
 -- Loop until the CoreGui successfully disables the PlayerList
 task.spawn(function()
