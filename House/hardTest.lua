@@ -1416,7 +1416,7 @@ local function enemyfpsBoost()
     for challengeKey, challengeData in pairs(v3) do
         -- challengeKey gives you the actual internal name (e.g., "DailyDedication")
         -- challengeData.name gives you the display name (e.g., "Daily Dedication")
-        print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
+        --print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
         local claimChall = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.ClaimReward
         claimChall:FireServer(
             tostring(challengeKey)
