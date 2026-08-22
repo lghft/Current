@@ -1352,6 +1352,20 @@ local function changeTowerTarget(towerIndex, targetMode)
         " (" .. currentTarget .. " -> " .. targetMode .. ", " .. steps .. "x " .. (direction == 1 and "fwd" or "back") .. ")")
 end
 
+local function lockTower(towerIndex)
+    local serverId = placedTowersByIndex[towerIndex]
+    if not serverId then
+        Notify("error", "[Tower Target] Tower #" .. tostring(towerIndex) .. " not placed yet")
+        return
+    end
+    local lockRemote = ReplicatedStorage.Modules.Remotes.RemoteEvent.ToggleLineLock
+    if not lockRemote then
+        Notify("error", "[Tower Target] lock Remote not found!")
+        return
+    end
+    lockRemote:FireServer(serverId)
+end
+
 local function towerAnimcCheck()
     local totalTowers = #placedTowersByIndex
     local processedTowers = 0
@@ -1699,6 +1713,12 @@ local function hardMacro()
         placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--16
         placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--17
         placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--18
+        lockTower(13)
+        lockTower(14)
+        lockTower(15)
+        lockTower(16)
+        lockTower(17)
+        lockTower(18)
         towerAnimcCheck()
     end
 
