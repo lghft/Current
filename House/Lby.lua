@@ -48,36 +48,38 @@ player.CharacterAdded:Connect(function(char)
     loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
 end)
 
-if player.Character then
+task.spawn(function()
     loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
-end
+end)
 
 local v3 = require(game:GetService("ReplicatedStorage").Databases.Challenges)
 
 -- Loop through all entries in the v3 table
 for challengeKey, challengeData in pairs(v3) do
-    print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
+    --print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
     local claimChall = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.ClaimReward
     claimChall:FireServer(tostring(challengeKey))
 end
+task.spawn(function()
+    local ddeal = workspace._Scenes["Death's Office"]["Deaths Office"].Death.DeathDeals.RE.BuyDeal
+    ddeal:FireServer(
+        1
+    )
+end)
 
-local Event = workspace._Scenes["Death's Office"]["Deaths Office"].Death.DeathDeals.RE.BuyDeal
-Event:FireServer(
-    1
-)
 
 local SetEle = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.SetInElevator
 SetEle:FireServer(true)
 task.wait()
-
+print("set")
 local LoadFlr = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteFunction.PreloadFloor
 LoadFlr:InvokeServer("Story", tonumber(getgenv().Floor))
-
+print("ld flr")
 task.wait()
 local MovFlr = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.MoveToFloor
 MovFlr:FireServer("Story", tonumber(getgenv().Floor))
 task.wait()
-
+print("mv flr")
 -- === DYNAMIC FLOOR SELECTION === --
 
 local function getTargetPromptPart(targetFloor, targetRoom)
@@ -124,7 +126,24 @@ local function getTargetPromptPart(targetFloor, targetRoom)
 end
 
 local promptPart = getTargetPromptPart(getgenv().Floor, getgenv().Stage)
+print(promptPart)
 local proximityPrompt = nil
+
+local exitPart = workspace._Floors.Floor4["Story#Floor4Elevator"].Exit
+
+repeat
+    task.wait(0.1)
+    local char = player.Character
+    if char then
+        local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+        if humanoidRoot then
+            local distance = (humanoidRoot.Position - exitPart.CFrame.Position).Magnitude
+            print("Distance to Exit: " .. tostring(distance))
+        end
+    end
+until (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - exitPart.CFrame.Position).Magnitude <= proximityThreshold)
+
+print("Player is close to Exit!")
 
 if promptPart then
     proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
@@ -132,23 +151,53 @@ if promptPart then
     -- Calculate position 20 studs below the Prompt's WorldCFrame
     local targetPos = promptPart.WorldCFrame.Position - Vector3.new(0, 15, 0)
     getgenv().TeleLoop = true
-
+    local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
+    local platform = Instance.new("Part")
+    platform.Name = "dgdfghrthhfgplatform"
+    platform.Shape = Enum.PartType.Block
+    platform.Size = Vector3.new(10, 1, 10) -- 10x1x10 studs
+    platform.Color = Color3.fromRGB(0, 255, 0) -- Green
+    platform.Material = Enum.Material.Neon
+    platform.CanCollide = true
+    platform.CFrame = CFrame.new(platPos)
+    platform.Transparency = 0.3 -- Semi-transparent so you can see through
+    platform.Parent = workspace
+    task.wait(1)
+    print("created platform?")
     while getgenv().TeleLoop do
-        task.wait()
-        local char = player.Character
-        if not char then continue end
-        local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
-        if not humanoidRoot then continue end
+    task.wait()
+    local char = player.Character
+    if not char then continue end
+    local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoidRoot or not humanoid then continue end
+    
+    local distance = (humanoidRoot.Position - targetPos).Magnitude
+    if distance <= proximityThreshold then
+        getgenv().TeleLoop = false
+        print("Teleport loop broken successfully at dynamic target!")
+        break
+    else
+        -- Reset velocity to prevent physics from pulling back
+        humanoidRoot.Velocity = Vector3.new(0, 0, 0)
+        humanoidRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         
-        local distance = (humanoidRoot.Position - targetPos).Magnitude
-        if distance <= proximityThreshold then
-            getgenv().TeleLoop = false
-            print("Teleport loop broken successfully at dynamic target!")
-            break
-        else
-            humanoidRoot.CFrame = CFrame.new(targetPos)
-        end
+        -- Set humanoid state to prevent interference
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+        
+        -- Teleport
+        task.spawn(function()
+            while true do
+                humanoidRoot.CFrame = CFrame.new(targetPos)
+                task.wait()
+            end
+        end)
+        
+        print("teleported? Distance: " .. tostring(distance))
     end
+end
 else
     warn("Could not locate the prompt for Floor: " .. tostring(getgenv().Floor) .. " Room: " .. tostring(getgenv().Stage))
 end
@@ -169,6 +218,7 @@ if gamePadDir then
         local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
         if setCapacityRemote then
             setCapacityRemote:InvokeServer(1)
+            print("set")
         end
     end)
 
@@ -178,6 +228,7 @@ if gamePadDir then
         local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
         if setCapacityRemote then
             setCapacityRemote:InvokeServer(1)
+            print("set")
         end
     end)
 
@@ -187,8 +238,10 @@ if gamePadDir then
         local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
         if startRemote then
             startRemote:FireServer()
+             print("started")
         elseif getgenv().Floor == 2 then
             startRemote:InvokeServer(1)
+            print("started")
         end
     end)
 else
