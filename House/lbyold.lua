@@ -149,7 +149,7 @@ if promptPart then
     proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
     
     -- Calculate position 20 studs below the Prompt's WorldCFrame
-    local targetPos = promptPart.WorldCFrame.Position - Vector3.new(0, 15, 0)
+    local targetPos = promptPart.WorldCFrame.Position
     getgenv().TeleLoop = true
     local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
     local platform = Instance.new("Part")
