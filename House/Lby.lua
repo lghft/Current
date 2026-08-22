@@ -2,8 +2,12 @@ repeat task.wait() until game:IsLoaded()
 local StarterGui = game:GetService("StarterGui")
 local gameId = game.GameId
 local function SmartTeleportToLobby()
-    local lobbyId = 131367064230486
     pcall(function()
+        local lobbyId = 131367064230486
+        local UserInputService = game:GetService("UserInputService")
+        local TeleportService = game:GetService("TeleportService")
+        local Globals = getgenv()
+        Globals.PrivateCode = ""
         local platform = UserInputService:GetPlatform()
         local IsMobile = (platform == Enum.Platform.IOS or platform == Enum.Platform.Android)
         
@@ -19,25 +23,11 @@ local function SmartTeleportToLobby()
 end
 task.spawn(function()
     local RunService = game:GetService("RunService")
-    local FPS_THRESHOLD = 6 -- consider "low fps" below this value
-    local CHECK_INTERVAL = 1 -- how often (in seconds) to evaluate FPS
-    local frameCount = 0
-    local elapsedTime = 0
-    RunService.Heartbeat:Connect(function(deltaTime)
-        frameCount += 1
-        elapsedTime += deltaTime
-
-        if elapsedTime >= CHECK_INTERVAL then
-            local fps = frameCount / elapsedTime
-
-            if fps < FPS_THRESHOLD then
-                print(string.format("Low FPS detected: %.1f fps", fps))
-                SmartTeleportToLobby()
-            end
-
-            -- reset counters for the next interval
-            frameCount = 0
-            elapsedTime = 0
+    RunService.RenderStepped:Connect(function(frame) -- This will fire every time a frame is rendered
+    --print("FPS: "..math.round(1/frame)) 
+        if math.round(1/frame) < 6 then
+            SmartTeleportToLobby()
+            connection:Disconnect()
         end
     end)
 end)
