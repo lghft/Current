@@ -1,6 +1,7 @@
 repeat task.wait() until game:IsLoaded()
 local StarterGui = game:GetService("StarterGui")
-
+local gameId = game.GameId
+repeat task.wait() until gameId == 10463578886
 -- Loop until the CoreGui successfully disables the PlayerList
 task.spawn(function()
     local success = false
