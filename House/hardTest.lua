@@ -1416,7 +1416,7 @@ local function enemyfpsBoost()
     for challengeKey, challengeData in pairs(v3) do
         -- challengeKey gives you the actual internal name (e.g., "DailyDedication")
         -- challengeData.name gives you the display name (e.g., "Daily Dedication")
-        --print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
+        print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
         local claimChall = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.ClaimReward
         claimChall:FireServer(
             tostring(challengeKey)
@@ -1674,9 +1674,12 @@ local function hardMacro()
         placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--11
         placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--12
         --3 duchess
-        placeTower(4,Vector3.new(9628, -24, -107),1)--13
-        placeTower(4,Vector3.new(9628, -24, -107),1)--14
-        placeTower(4,Vector3.new(9628, -24, -107),1)--15
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--13
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--14
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--15
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--16
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--17
+        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--18
         towerAnimcCheck()
     end
 
