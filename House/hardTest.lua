@@ -1164,8 +1164,18 @@ local function placeTower(slotIndex, position, waitTime)
     end
     
     task.wait(0.2)
-    local towerCFrame = CFrame.new(position)
-    
+
+    local towerCFrame
+    local posType = typeof(position)
+    if posType == "CFrame" then
+        towerCFrame = position
+    elseif posType == "Vector3" then
+        towerCFrame = CFrame.new(position)
+    else
+        Notify("error", "[Tower Placement] Invalid position type: " .. tostring(posType) .. " (expected Vector3 or CFrame)")
+        return false
+    end
+
     -- Call the remote - metamethod hook handles registration automatically
     local success, err = pcall(function()
         Notify("print", "[Tower Placement] Invoking server for " .. tostring(slotData.name) .. "...")
@@ -1191,7 +1201,16 @@ local function spawnTempTower(uid,pos,maxTowers,waittime)
         return false
     end
 
-    local towerCFrame = CFrame.new(pos)
+    local towerCFrame
+    local posType = typeof(pos)
+    if posType == "CFrame" then
+        towerCFrame = pos
+    elseif posType == "Vector3" then
+        towerCFrame = CFrame.new(pos)
+    else
+        Notify("error", "[Temp Tower] Invalid pos type: " .. tostring(posType) .. " (expected Vector3 or CFrame)")
+        return false
+    end
 
     for i = 1, maxTowers do
         -- WAIT FOR CASH BEFORE PLACING (same system as placeTower)
@@ -1657,29 +1676,29 @@ local function hardMacro()
         getgenv().Ability = true
         spd(2)
         
-        placeTower(3,Vector3.new(9611.64165, -24.37354, -116.84044),1) --1
-        placeTower(2,Vector3.new(9628, -24, -107),1)--2
+        placeTower(3,CFrame.new(9611.64165, -24.37354, -116.84044),1) --1
+        placeTower(2,CFrame.new(9628, -24, -107),1)--2
         --2 saint
-        placeTower(3,Vector3.new(9611.641615, -24.37354, -116.84084),1)--3
-        placeTower(3,Vector3.new(9611.64165, -24.373554, -116.840484),1)--4
+        placeTower(3,CFrame.new(9611.641615, -24.37354, -116.84084),1)--3
+        placeTower(3,CFrame.new(9611.64165, -24.373554, -116.840484),1)--4
         --2 dd
-        placeTower(2,Vector3.new(9628, -24, -107),1)--5
-        placeTower(2,Vector3.new(9628, -24, -107),1)--6
+        placeTower(2,CFrame.new(9628, -24, -107),1)--5
+        placeTower(2,CFrame.new(9628, -24, -107),1)--6
         --3 hf
-        placeTower(5,Vector3.new(9646.0925, -24.5050098, -117.62257568),1)--7
-        placeTower(5,Vector3.new(9646.09035, -24.508, -117.627968),1)--8
-        placeTower(5,Vector3.new(9646.0203125, -24.50398, -117.6257568),1)--9
+        placeTower(5,CFrame.new(9646.0925, -24.5050098, -117.62257568),1)--7
+        placeTower(5,CFrame.new(9646.09035, -24.508, -117.627968),1)--8
+        placeTower(5,CFrame.new(9646.0203125, -24.50398, -117.6257568),1)--9
         --3 angel
-        placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--10
-        placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--11
-        placeTower(1,Vector3.new(9646.145, -24.3464, -123.723),1)--12
+        placeTower(1,CFrame.new(9646.145, -24.3464, -123.723),1)--10
+        placeTower(1,CFrame.new(9646.145, -24.3464, -123.723),1)--11
+        placeTower(1,CFrame.new(9646.145, -24.3464, -123.723),1)--12
         --3 duchess
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--13
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--14
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--15
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--16
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--17
-        placeTower(4,Vector3.new(9628, -24, -107,0, 0, -1, 0, 1, 0, 1, 0,0),1)--18
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--13
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--14
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--15
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--16
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--17
+        placeTower(4,CFrame.new(9628, -24, -107,-4.3711388286738e-08, 0, -1, 0, 1, 0, 1, 0,-4.3711388286738e-08),1)--18
         towerAnimcCheck()
     end
 
