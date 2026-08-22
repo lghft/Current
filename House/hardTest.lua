@@ -2,7 +2,8 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 task.wait(4)
-
+local gameId = game.GameId
+repeat task.wait() until gameId == 10463578886 and workspace:WaitForChild("ActiveMap")
 Services = setmetatable({}, {
 	__index = function(self, name)
 		local success, cache = pcall(function()
