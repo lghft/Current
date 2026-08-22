@@ -78,6 +78,8 @@ print("ld flr")
 task.wait()
 local MovFlr = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.MoveToFloor
 MovFlr:FireServer("Story", tonumber(getgenv().Floor))
+local SetEle = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.SetInElevator
+SetEle:FireServer(false)
 task.wait()
 print("mv flr")
 -- === DYNAMIC FLOOR SELECTION === --
@@ -149,7 +151,7 @@ if promptPart then
     proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
     
     -- Calculate position 20 studs below the Prompt's WorldCFrame
-    local targetPos = promptPart.WorldCFrame.Position - Vector3.new(0, 0, 0)
+    local targetPos = promptPart.WorldCFrame.Position
     getgenv().TeleLoop = true
     local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
     local platform = Instance.new("Part")
@@ -162,7 +164,7 @@ if promptPart then
     platform.CFrame = CFrame.new(platPos)
     platform.Transparency = 0.3 -- Semi-transparent so you can see through
     platform.Parent = workspace
-    task.wait()
+    task.wait(1)
     print("created platform?")
     while getgenv().TeleLoop do
     task.wait()
@@ -189,10 +191,8 @@ if promptPart then
         
         -- Teleport
         task.spawn(function()
-            while true do
-                humanoidRoot.CFrame = CFrame.new(targetPos)
-                task.wait()
-            end
+            humanoidRoot.CFrame = CFrame.new(targetPos)
+            task.wait()
         end)
         
         print("teleported? Distance: " .. tostring(distance))
@@ -203,6 +203,7 @@ else
 end
 
 task.wait(1)
+
 if proximityPrompt then
     proximityPrompt.MaxActivationDistance = math.huge
     proximityPrompt.HoldDuration = 0
@@ -235,19 +236,14 @@ if gamePadDir then
     task.wait(0.25)
 
     pcall(function()
-        task.spawn(function()
-            while true do
-                local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
-                if startRemote then
-                    startRemote:FireServer()
-                    print("started")
-                elseif getgenv().Floor == 2 then
-                    startRemote:InvokeServer(1)
-                    print("started")
-                end
-                task.wait()
-            end
-        end)
+        local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
+        if startRemote then
+            startRemote:FireServer()
+             print("started")
+        elseif getgenv().Floor == 2 then
+            startRemote:InvokeServer(1)
+            print("started")
+        end
     end)
 else
     warn("Could not find GamePad directory to fire remotes dynamically.")
