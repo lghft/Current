@@ -1756,7 +1756,7 @@ local function hardMacro()
                     end
                     
                     Notify("print", "[Macro] Waiting for new match DifficultyVote GUI...")
-                    task.wait(5)
+                    task.wait(2)
                     task.spawn(hardMacro)
                 else
                     UpdateMacroStep("Returning to Lobby")
@@ -1784,4 +1784,3 @@ end
 enemyfpsBoost()
 --easyMacro()
 hardMacro()
-
