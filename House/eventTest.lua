@@ -1812,7 +1812,7 @@ task.spawn(function()
     loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/eventPass.lua'))()
 end)
 task.spawn(function()
-    loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/AutoTurret.lua'))()
+    --loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/AutoTurret.lua'))()
 end)
 
 hardMacro()
