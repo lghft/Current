@@ -27,7 +27,7 @@ local function triggerSentry(v)
     -- 3. Keep firing the prompt repeatedly until the color changes
     while powerPart and powerPart.Color == Color3.fromRGB(255, 45, 45) do
         fireproximityprompt(prompt)
-        task.wait(0.2) -- Adjust delay between fires if needed
+        task.wait() -- Adjust delay between fires if needed
     end
 end
 
