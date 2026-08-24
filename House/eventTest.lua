@@ -1783,6 +1783,9 @@ local function hardMacro()
                     Notify("print", "[Macro] Waiting for new match DifficultyVote GUI...")
                     task.wait(2)
                     task.spawn(hardMacro)
+                    task.spawn(function()
+                        loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/webhook.lua'))()
+                    end)
                 else
                     UpdateMacroStep("Returning to Lobby")
                     local RespondRemote = ReplicatedStorage.Modules.Remotes.RemoteEvent.RespondToQuery
