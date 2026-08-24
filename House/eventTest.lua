@@ -1735,7 +1735,7 @@ local function hardMacro()
     local function wv3()
         towerAnimcCheck()
     end
-    local function wv11()
+    local function wv9()
         autoUpgradeTower(1, true, 1)
         autoUpgradeTower(2, true, 1)
         autoUpgradeTower(3, true, 1)
@@ -1760,7 +1760,7 @@ local function hardMacro()
     end
     
     local waveActions = {
-        [1] = wv1, [3] = wv3,[11] = wv11, [19] = wv19
+        [1] = wv1, [3] = wv3,[9] = wv9, [19] = wv19
     }
 
     -- Wave detection loop
