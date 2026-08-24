@@ -7,12 +7,8 @@ local webhookUrl = getgenv().WEBHOOK_URL or "https://discord.com/api/webhooks/14
 -- Load required modules based on your dumped paths
 local inventoryGetters = require(ReplicatedStorage.Modules.Inventory.inventory_getters)
 local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
-local Factions = require(ReplicatedStorage.Databases.Factions)
-
--- Safely attempt to get HotbarContext for the active faction
-local HotbarContext = pcall(function() 
-    return require(ReplicatedStorage.Modules.Ui.App.Contexts.HotbarContext) 
-end)
+local FactionsModule = require(ReplicatedStorage.Modules.Factions)
+local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
 
 local player = Players.LocalPlayer
 
@@ -34,7 +30,7 @@ local function createProgressBar(current, max, length)
 end
 
 local function sendWebhook()
-    local success, mainLevel, mainExpBarText, factionName, factionLevel, factionExpBarText, inventoryData = pcall(function()
+    local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, inventoryData = pcall(function()
         -- 1. Main Level & XP Calculation
         local mainXp = XpSystem.getXp("Main", player) or 0
         local mLevel = XpSystem.xpToLevel("Main", mainXp)
@@ -43,22 +39,20 @@ local function sendWebhook()
         local mainCurrentXp = mainXp - mBaseXp
         local mExpBar = createProgressBar(mainCurrentXp, mNextXp, 10)
         
-        -- 2. Determine Current Faction & Stats
-        local currentFactionKey = "Main"
-        if HotbarContext and pcall(function() return React end) then
-            local successCtx, contextVal = pcall(function()
-                return React.useContext(HotbarContext.Consumer).faction
-            end)
-            if successCtx and contextVal then
-                currentFactionKey = contextVal
-            end
+        -- 2. Determine Current Faction using Factions module
+        local currentFactionKey = "Omni"
+        local successFaction, resFaction = pcall(function()
+            return FactionsModule.getCurrentFaction(player)
+        end)
+        if successFaction and resFaction then
+            currentFactionKey = resFaction
         end
         
-        -- Get faction display name
-        local factionData = Factions[currentFactionKey]
+        -- Get display name from database (fallback to key if not found)
+        local factionData = FactionsDatabase[currentFactionKey]
         local fName = factionData and factionData.name or currentFactionKey
         
-        -- Calculate Faction Level & XP
+        -- Calculate Faction Level & XP using the correct faction key
         local fXp = XpSystem.getXp(currentFactionKey, player) or 0
         local fLevel = XpSystem.xpToLevel(currentFactionKey, fXp)
         local fBaseXp = XpSystem.levelToXp(fLevel)
@@ -69,7 +63,7 @@ local function sendWebhook()
         -- 3. Fetch Inventory
         local inv = inventoryGetters.getInventory(player)
         
-        return mLevel, mExpBar, fName, fLevel, fExpBar, inv
+        return mLevel, mExpBar, currentFactionKey, fName, fLevel, fExpBar, inv
     end)
 
     if not success then
@@ -118,7 +112,7 @@ local function sendWebhook()
                     ["value"] = tostring(mainExpBarText),
                     ["inline"] = false
                 },
-                -- Faction Information (Placed above inventory)
+                -- Faction Information (Fetched properly now)
                 {
                     ["name"] = "Faction (" .. tostring(factionName) .. ") Level (" .. tostring(factionLevel or 1) .. ")",
                     ["value"] = tostring(factionExpBarText),
