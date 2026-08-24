@@ -11,7 +11,6 @@ local function triggerSentry(v)
     local head = v.Turret.Head
     
     prompt.HoldDuration = 0
-    prompt.MaxActivationDistance = 9999
     
     -- 1. Command the humanoid to walk to the sentry head position
     humanoid:MoveTo(head.Position)
