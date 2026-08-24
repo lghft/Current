@@ -51,9 +51,10 @@ end)
 task.wait(4)
 local player = game.Players.LocalPlayer
 local proximityThreshold = 10 -- Adjust this distance as needed
-getgenv().Mode = "Story" --Story,Event,Garden
+getgenv().Mode = "Event" --Story,Event,Garden
 getgenv().Floor = 4 -- Event:1, Garden:1
 getgenv().Stage = 4 
+getgenv().eventStage = "Military"
 getgenv().Walk = true
 
 if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
@@ -75,7 +76,7 @@ local loadoutRequirements = {
         Team = {"tower485", "tower161", "tower504", "tower234", "tower340"}
     },
     Military = {
-        Team = {"tower491", "tower375", "tower255", "tower201", "tower340"}
+        Team = {"tower201", "tower255", "tower375", "tower491", "tower73"}
     },
     Paranormal = {
         Team = {"tower165", "tower360", "tower497", "tower194", "tower340"}
@@ -171,6 +172,18 @@ local function getHighestPriorityDoor(openDoors)
         return a.data.priority < b.data.priority
     end)
     return openDoors[1]
+end
+
+local function getDoorByEventStage(openDoors, eventStage)
+    -- Find door matching the eventStage
+    for _, door in ipairs(openDoors) do
+        if door.name == eventStage then
+            return door
+        end
+    end
+    -- Fallback to highest priority if eventStage door not found
+    warn("Door for eventStage '" .. eventStage .. "' not found, using highest priority")
+    return getHighestPriorityDoor(openDoors)
 end
 
 local function equipLoadout(elementName)
@@ -459,8 +472,8 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
             print("  - " .. doorInfo.name .. " (Priority: " .. doorInfo.data.priority .. ")")
         end
         
-        -- Get highest priority door
-        local targetDoor = getHighestPriorityDoor(openDoors)
+        -- Select door based on eventStage
+        local targetDoor = getDoorByEventStage(openDoors, getgenv().eventStage)
         print("Selected door: " .. targetDoor.name)
         
         -- Wait for correct loadout
