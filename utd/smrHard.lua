@@ -1343,7 +1343,7 @@ function replayMatch()
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
-        placeUnit(5, Vector3.new(-1504.7905273438, 143.55992126465, -1384.5667724609), 1)--4
+        placeUnit(5, Vector3.new(-1508.4569091797, 135.64553833008, -1322.2601318359), 1)--4
         autoTowerAbility(2, 1)
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)--5  -1166.2114257812, 135.05136108398, -1308.1571044922
@@ -1504,7 +1504,7 @@ function summerMatch()
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
         task.wait(1)
         placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)--3 -1177.3988037109, 136.49728393555, -1315.2202148438
-        placeUnit(5, Vector3.new(-1504.7905273438, 143.55992126465, -1384.5667724609), 1)--4
+        placeUnit(5, Vector3.new(-1508.4569091797, 135.64553833008, -1322.2601318359), 1)--4
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
