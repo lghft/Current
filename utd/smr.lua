@@ -20,7 +20,7 @@ local currentTowerIndex = 0
 getgenv().Ability = false
 getgenv().Replay = true
 getgenv().Fps = true
-getgenv().Debug = false
+getgenv().Debug = true
 getgenv().Aizen = false
 
 -- ==========================================
