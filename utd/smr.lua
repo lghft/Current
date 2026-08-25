@@ -1347,6 +1347,7 @@ function replayMatch()
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
+        placeUnit(5, Vector3.new(-1189.3095703125, 137.37525939941, -1681.1402587891), 1)
     end
     local function wv7()
         UpdateMacroStep("Wave 10 Routine")
@@ -1507,14 +1508,13 @@ function summerMatch()
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
+        placeUnit(5, Vector3.new(-1189.3095703125, 137.37525939941, -1681.1402587891), 1)
     end
     
     local function wv10()
         UpdateMacroStep("Wave 10 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
         getgenv().Aizen = false
-
-        placeUnit(5, Vector3.new(-1189.3095703125, 137.37525939941, -1681.1402587891), 1)
         upgradeUnit(5, 1, 1)  
         task.wait(2)
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
