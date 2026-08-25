@@ -1336,25 +1336,24 @@ function replayMatch()
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
         spd()
         startMatch()
-        placeUnit(4, Vector3.new(-1170.2559814453, 135.236328125, -1688.1260986328), 1) 
-        placeUnit(6, Vector3.new(-1288.8853759766, 144.26679992676, -1668.8966064453), 1)
+        placeUnit(4, Vector3.new(-1170.2559814453, 135.236328125, -1688.1260986328), 1) --1
+        placeUnit(6, Vector3.new(-1288.8853759766, 144.26679992676, -1668.8966064453), 1)--2
         task.wait(1)
-        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)-- -1177.3988037109, 136.49728393555, -1315.2202148438
+        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)--3 -1177.3988037109, 136.49728393555, -1315.2202148438
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
         autoTowerAbility(2, 1)
         task.wait()
-        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
-        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
-        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
+        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)--4
+        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)--5  -1166.2114257812, 135.05136108398, -1308.1571044922
         print("should've ulq")
+        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
     local function wv3()
         UpdateMacroStep("Wave 3 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
-        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
-        upgradeUnit(5, 1, 1) 
+        --upgradeUnit(5, 1, 1) 
         task.wait(2)
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Visible = true
@@ -1362,8 +1361,9 @@ function replayMatch()
         if getgenv().Aizen == true then
             placeUnit(2, Vector3.new(-1237.7738037109, 143.60464477539, -1682.4620361328), 1) 
         else
-            placeUnit(2, Vector3.new(-1175.7613525391, 135.85260009766, -1681.7412109375), 1)
-            upgradeUnit(6, 2, 1) 
+            placeUnit(2, Vector3.new(-1175.7613525391, 135.85260009766, -1681.7412109375), 1)--6
+            upgradeUnit(5, 2, 1) 
+            placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)--7
             autoTowerAbility(6, 1) 
             task.wait(1)
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
@@ -1501,23 +1501,23 @@ function summerMatch()
     local function wv1()
         UpdateMacroStep("Wave 1 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
-        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)-- -1177.3988037109, 136.49728393555, -1315.2202148438
+        task.wait(1)
+        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)--3 -1177.3988037109, 136.49728393555, -1315.2202148438
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
         autoTowerAbility(2, 1)
         task.wait()
-        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
-        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
-        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
+        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)--4
+        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)--5  -1166.2114257812, 135.05136108398, -1308.1571044922
         print("should've ulq")
+        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
     
     local function wv3()
         UpdateMacroStep("Wave 3 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
-        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
-        upgradeUnit(5, 1, 1) 
+        --upgradeUnit(5, 1, 1) 
         task.wait(2)
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Visible = true
@@ -1525,8 +1525,9 @@ function summerMatch()
         if getgenv().Aizen == true then
             placeUnit(2, Vector3.new(-1237.7738037109, 143.60464477539, -1682.4620361328), 1) 
         else
-            placeUnit(2, Vector3.new(-1175.7613525391, 135.85260009766, -1681.7412109375), 1)
-            upgradeUnit(6, 2, 1) 
+            placeUnit(2, Vector3.new(-1175.7613525391, 135.85260009766, -1681.7412109375), 1)--6
+            upgradeUnit(5, 2, 1) 
+            placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)--7
             autoTowerAbility(6, 1) 
             task.wait(1)
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
