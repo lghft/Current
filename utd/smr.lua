@@ -1347,7 +1347,7 @@ function replayMatch()
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
-        placeUnit(5, Vector3.new(-1506.8875732422, 143.67100524902, -1385.070190429), 1)
+        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
     end
     local function wv7()
         UpdateMacroStep("Wave 10 Routine")
@@ -1508,10 +1508,10 @@ function summerMatch()
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
-        placeUnit(5, Vector3.new(-1506.8875732422, 143.67100524902, -1385.070190429), 1)
+        placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
     end
     
-    local function wv10()
+    local function wv7()
         UpdateMacroStep("Wave 10 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
         getgenv().Aizen = false
@@ -1559,7 +1559,7 @@ function summerMatch()
     local waveActions = {
         [1] = wv1,
         [10] = wv10,
-        [15] = wv15,
+        [7] = wv7,
         [20] = wv20,
     }
 
