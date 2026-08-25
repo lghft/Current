@@ -2,7 +2,7 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 task.wait(4)
-print("v1.0")
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -1374,7 +1374,9 @@ function replayMatch()
         upgradeUnit(6, 2, 1) 
         --Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
     end
-
+    local function wv5()
+        upgradeUnit(6, 2, 1)
+    end
     local function wv15()
         UpdateMacroStep("Wave 15 Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 15 FUNCTION <<<")
@@ -1401,6 +1403,7 @@ function replayMatch()
     local waveActions = {
         [1] = wv1,
         [3] = wv3,
+        [5] = wv5,
         [15] = wv15,
         [20] = wv20,
     }
@@ -1540,7 +1543,9 @@ function summerMatch()
         end
         --Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
     end
-
+    local function wv5()
+        upgradeUnit(6, 2, 1)
+    end
     local function wv15()
         upgradeUnit(6, 2, 1) 
         UpdateMacroStep("Wave 15 Routine")
@@ -1567,6 +1572,7 @@ function summerMatch()
     local waveActions = {
         [1] = wv1,
         [3] = wv3,
+        [5] = wv5,
         [15] = wv15,
         [20] = wv20,
     }
