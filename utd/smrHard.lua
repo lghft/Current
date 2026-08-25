@@ -2,7 +2,7 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 task.wait(4)
-
+print("v1.0")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -1371,12 +1371,14 @@ function replayMatch()
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.UpgradePathSelection.Visible = false
             upgradeUnit(6, 2, 1)
         end
+        upgradeUnit(6, 2, 1) 
         --Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
     end
 
     local function wv15()
         UpdateMacroStep("Wave 15 Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 15 FUNCTION <<<")
+        upgradeUnit(6, 2, 1) 
         task.wait(1)
         if getgenv().Aizen == true then
             autoTowerAbility(6, 1)
@@ -1540,6 +1542,7 @@ function summerMatch()
     end
 
     local function wv15()
+        upgradeUnit(6, 2, 1) 
         UpdateMacroStep("Wave 15 Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 15 FUNCTION <<<")
         task.wait(1)
