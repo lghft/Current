@@ -1348,10 +1348,10 @@ function replayMatch()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
-    local function wv10()
+    local function wv7()
         UpdateMacroStep("Wave 10 Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
-        placeUnit(5, Vector3.new(-1181.4350585938, 136.44987487793, -1679.6676025391), 1)
+        placeUnit(5, Vector3.new(-1215.67578125, 143.58377075195, -1362.6119384766), 1)
         upgradeUnit(5, 1, 1) 
         task.wait(2)
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
@@ -1395,7 +1395,7 @@ function replayMatch()
 
     local waveActions = {
         [1] = wv1,
-        [10] = wv10,
+        [7] = wv7,
         [15] = wv15,
         [20] = wv20,
     }
@@ -1499,13 +1499,13 @@ function summerMatch()
     local function wv1()
         UpdateMacroStep("Wave 1 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
-        placeUnit(1, Vector3.new(-1504.6617431641, 143.48184204102, -1383.5286865234), 0)
+        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)-- -1177.3988037109, 136.49728393555, -1315.2202148438
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
         autoTowerAbility(2, 1)
         task.wait()
-        placeUnit(3, Vector3.new(-1510.9262695312, 136.24801635742, -1327.6561279297), 1)
+        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)---1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
     
