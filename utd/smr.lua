@@ -1547,7 +1547,7 @@ function summerMatch()
         Notify("Print", "[Wave Action] >>> WAVE 15 COMPLETED <<<")
     end
 
-    local function wv25()
+    local function wv20()
         UpdateMacroStep("Wave 25 (Boss) Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 25 FUNCTION <<<")
         task.wait(5)
@@ -1561,7 +1561,7 @@ function summerMatch()
         [1] = wv1,
         [10] = wv10,
         [15] = wv15,
-        [25] = wv25,
+        [20] = wv20,
     }
 
     local firedWaves = {}
