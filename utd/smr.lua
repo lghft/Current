@@ -20,7 +20,7 @@ local currentTowerIndex = 0
 getgenv().Ability = false
 getgenv().Replay = true
 getgenv().Fps = true
-getgenv().Debug = false
+getgenv().Debug = true
 getgenv().Aizen = false
 
 -- ==========================================
@@ -1339,13 +1339,13 @@ function replayMatch()
         placeUnit(4, Vector3.new(-1170.2559814453, 135.236328125, -1688.1260986328), 1) 
         placeUnit(6, Vector3.new(-1288.8853759766, 144.26679992676, -1668.8966064453), 1)
         task.wait(1)
-        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)
+        placeUnit(1, Vector3.new(-1504.6617431641, 143.48184204102, -1383.5286865234), 0)-- -1177.3988037109, 136.49728393555, -1315.2202148438
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
         autoTowerAbility(2, 1)
         task.wait()
-        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)
+        placeUnit(3, Vector3.new(-1511.26953125, 143.49012756348, -1384.1145019531), 1)-- -1166.2114257812, 135.05136108398, -1308.1571044922
         --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
     local function wv10()
