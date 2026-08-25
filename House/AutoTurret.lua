@@ -17,17 +17,18 @@ local function triggerSentry(v)
     
     -- 2. Wait until the character arrives close to the destination
     local startTime = tick()
-    while tick() - startTime < 10 do -- 10-second timeout to prevent infinite yielding
+    while tick() - startTime < 8 do -- 10-second timeout to prevent infinite yielding
         if (HRP.Position - head.Position).Magnitude < 5 then
             break
         end
-        task.wait(0.1)
+        task.wait()
     end
     
     -- 3. Keep firing the prompt repeatedly until the color changes
     while powerPart and powerPart.Color == Color3.fromRGB(255, 45, 45) do
         fireproximityprompt(prompt)
-        task.wait() -- Adjust delay between fires if needed
+        prompt.HoldDuration = 0
+        task.wait()
     end
 end
 
@@ -47,5 +48,5 @@ while true do
             end
         end
     end
-    task.wait(1)
+    task.wait()
 end
