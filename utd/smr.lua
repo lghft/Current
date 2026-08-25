@@ -1333,7 +1333,7 @@ function replayMatch()
 
     local function wv1()
         UpdateMacroStep("Wave 1 Routine")
-        Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
+        --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
         spd()
         startMatch()
         placeUnit(4, Vector3.new(-1170.2559814453, 135.236328125, -1688.1260986328), 1) 
@@ -1346,13 +1346,12 @@ function replayMatch()
         autoTowerAbility(2, 1)
         task.wait()
         placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)
-        Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
+        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
-    
     local function wv10()
         UpdateMacroStep("Wave 10 Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
-        placeUnit(5, Vector3.new(-1189.3095703125, 137.37525939941, -1681.1402587891), 1)
+        placeUnit(5, Vector3.new(-1181.4350585938, 136.44987487793, -1679.6676025391), 1)
         upgradeUnit(5, 1, 1) 
         task.wait(2)
         game:GetService("Players").LocalPlayer.PlayerGui.MainGui.MainFrames.Visible = true
@@ -1369,7 +1368,7 @@ function replayMatch()
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Visible = true
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.UpgradePathSelection.Visible = false
         end
-        Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
+        --Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
     end
 
     local function wv15()
@@ -1381,15 +1380,15 @@ function replayMatch()
         end
         autoTowerAbility(6, 1)
         task.wait(1)
-        Notify("Print", "[Wave Action] >>> WAVE 15 COMPLETED <<<")
+        --Notify("Print", "[Wave Action] >>> WAVE 15 COMPLETED <<<")
     end
 
-    local function wv25()
+    local function wv20()
         UpdateMacroStep("Wave 25 (Boss) Routine")
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 25 FUNCTION <<<")
         task.wait(5)
         task.spawn(function()
-            Notify("Print", "[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
+            --Notify("Print", "[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
             ragnaOnLastBoss(5)
         end)
     end
@@ -1398,7 +1397,7 @@ function replayMatch()
         [1] = wv1,
         [10] = wv10,
         [15] = wv15,
-        [25] = wv25,
+        [20] = wv20,
     }
 
     local firedWaves = {}
@@ -1499,20 +1498,20 @@ function summerMatch()
 
     local function wv1()
         UpdateMacroStep("Wave 1 Routine")
-        Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
-        placeUnit(1, Vector3.new(-1507.9349365234, 134.66094970703, -1313.7093505859), 0)
+        --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 1 FUNCTION <<<")
+        placeUnit(1, Vector3.new(-1177.3988037109, 136.49728393555, -1315.2202148438), 0)
         getgenv().Ability = true
         autoTowerAbility(3, 1) 
         task.wait()
         autoTowerAbility(2, 1)
         task.wait()
-        placeUnit(3, Vector3.new(-1508.0070800781, 137.1851348877, -1335.5341796875), 1)
-        Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
+        placeUnit(3, Vector3.new(-1166.2114257812, 135.05136108398, -1308.1571044922), 1)
+        --Notify("Print", "[Wave Action] >>> WAVE 1 COMPLETED <<<")
     end
     
     local function wv10()
         UpdateMacroStep("Wave 10 Routine")
-        Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
+        --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
         getgenv().Aizen = false
 
         placeUnit(5, Vector3.new(-1189.3095703125, 137.37525939941, -1681.1402587891), 1)
@@ -1532,7 +1531,7 @@ function summerMatch()
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.HUD.Visible = true
             game:GetService("Players").LocalPlayer.PlayerGui.MainGui.UpgradePathSelection.Visible = false
         end
-        Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
+        --Notify("Print", "[Wave Action] >>> WAVE 10 COMPLETED <<<")
     end
 
     local function wv15()
@@ -1544,7 +1543,7 @@ function summerMatch()
         end
         autoTowerAbility(6, 1)
         task.wait(1)
-        Notify("Print", "[Wave Action] >>> WAVE 15 COMPLETED <<<")
+        --Notify("Print", "[Wave Action] >>> WAVE 15 COMPLETED <<<")
     end
 
     local function wv20()
@@ -1552,7 +1551,7 @@ function summerMatch()
         Notify("Print", "[Wave Action] >>> EXECUTING WAVE 25 FUNCTION <<<")
         task.wait(5)
         task.spawn(function()
-            Notify("Print", "[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
+            --Notify("Print", "[Wave Action] >>> Ragna on Last Boss Logic Initiated <<<")
             ragnaOnLastBoss(5)
         end)
     end
