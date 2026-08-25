@@ -79,6 +79,40 @@ local function claimCalendarReward()
 end
 claimCalendarReward()
 
+task.spawn(function()
+    for i=1,7 do
+        local c1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimAttendanceTier
+        c1:FireServer(
+            i
+        )
+        task.wait()
+    end
+    for _=1,4 do
+        local q1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimQuestboardSlot
+        q1:FireServer(
+            _
+        )
+        task.wait()
+    end
+    while true do
+        local s1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimGift
+        s1:FireServer(
+            "summer_gifts_2026"
+        )
+        local s2 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimGiftStreak
+        s2:FireServer(
+            "summer_gifts_2026",
+            1
+        )
+        local s2 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimGiftStreak
+        s2:FireServer(
+            "summer_gifts_2026",
+            2
+        )
+        task.wait()
+    end
+end)
+
 function missing(t, f, fallback)
 	if type(f) == t then return f end
 	return fallback
