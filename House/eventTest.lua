@@ -36,6 +36,7 @@ getgenv().Replay = true
 getgenv().Fps = true
 getgenv().Debug = false
 getgenv().UpgradeMode = "Sequential"-- Priority Sequential
+getgenv().Print = false
 
 local hotbarData = {}
 local placedTowersByIndex = {}
@@ -639,18 +640,22 @@ ConfirmBtn.MouseButton1Click:Connect(function()
 end)
 
 local function Notify(logType, message)
-    local timeStamp = os.date("[%I:%M:%S %p]")
-    local icon = "[INFO]"
-    local color = Palette.TextPrimary
+    local logType = logType
+    local message = message
+    if getgenv().Print == true then
+        local timeStamp = os.date("[%I:%M:%S %p]")
+        local icon = "[INFO]"
+        local color = Palette.TextPrimary
 
-    logType = string.lower(tostring(logType))
-    if logType == "warn" then icon = "[WARN]"; color = Palette.Warning; warn(message)
-    elseif logType == "error" then icon = "[ERROR]"; color = Palette.Danger; warn("[ERROR]: " .. message)
-    else print(message) end
+        logType = string.lower(tostring(logType))
+        if logType == "warn" then icon = "[WARN]"; color = Palette.Warning; warn(message)
+        elseif logType == "error" then icon = "[ERROR]"; color = Palette.Danger; warn("[ERROR]: " .. message)
+        else print(message) end
 
-    local formattedMessage = string.format("%s %s: %s", timeStamp, icon, tostring(message))
-    if #LoggerQueue.messages < LoggerQueue.maxMessages then 
-        table.insert(LoggerQueue.messages, {text = formattedMessage, color = color}) 
+        local formattedMessage = string.format("%s %s: %s", timeStamp, icon, tostring(message))
+        if #LoggerQueue.messages < LoggerQueue.maxMessages then 
+            table.insert(LoggerQueue.messages, {text = formattedMessage, color = color}) 
+        end
     end
 end
 
