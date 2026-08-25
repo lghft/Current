@@ -1350,8 +1350,8 @@ function replayMatch()
         placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
         print("should've ulq")
     end
-    local function wv5()
-        UpdateMacroStep("Wave 10 Routine")
+    local function wv3()
+        UpdateMacroStep("Wave 3 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
         placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
         upgradeUnit(5, 1, 1) 
@@ -1397,7 +1397,7 @@ function replayMatch()
 
     local waveActions = {
         [1] = wv1,
-        [5] = wv5,
+        [3] = wv3,
         [15] = wv15,
         [20] = wv20,
     }
@@ -1513,8 +1513,8 @@ function summerMatch()
         print("should've ulq")
     end
     
-    local function wv5()
-        UpdateMacroStep("Wave 10 Routine")
+    local function wv3()
+        UpdateMacroStep("Wave 3 Routine")
         --Notify("Print", "[Wave Action] >>> EXECUTING WAVE 10 FUNCTION <<<")
         placeUnit(5, Vector3.new(-1504.6909179688, 138.24360656738, -1344.4370117188), 1)
         upgradeUnit(5, 1, 1) 
@@ -1560,7 +1560,7 @@ function summerMatch()
 
     local waveActions = {
         [1] = wv1,
-        [5] = wv5,
+        [3] = wv3,
         [15] = wv15,
         [20] = wv20,
     }
