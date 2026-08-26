@@ -1,6 +1,6 @@
 print("lby?")
 getgenv().IsLDLD = true
-getgenv().Active = "dun"
+getgenv().Active = "eventhard"
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
