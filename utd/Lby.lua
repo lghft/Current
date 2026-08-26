@@ -1,6 +1,6 @@
 print("lby?")
 getgenv().IsLDLD = true
-getgenv().Active = "eventhard"
+getgenv().Active = "dun"
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -79,21 +79,30 @@ local function claimCalendarReward()
 end
 claimCalendarReward()
 
+
 task.spawn(function()
+    while true do
     for i=1,7 do
         local c1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimAttendanceTier
         c1:FireServer(
             i
         )
+    end
+    task.wait()
+    end 
+end)
+task.spawn(function()
+    while true do
+        for i=1,4 do
+            local q1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimQuestboardSlot
+            q1:FireServer(
+                i
+            )
+        end
         task.wait()
     end
-    for _=1,4 do
-        local q1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimQuestboardSlot
-        q1:FireServer(
-            _
-        )
-        task.wait()
-    end
+end)
+task.spawn(function()
     while true do
         local s1 = game:GetService("ReplicatedStorage").Modules.GlobalInit.RemoteEvents.PlayerClaimGift
         s1:FireServer(
