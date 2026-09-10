@@ -4,14 +4,14 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 
 local PRIORITY_BUFFS = {
     "Reinforcements",
-    "Sharpened Edges",
+    "SharpenedEdges",
     "Overclock",
-    "Demon Pact",
-    "Paranormal Reach",
-    "Fortify the Gate",
-    "Holy Fervor",
+    "DemonPact",
+    "ParanormalReach",
+    "FortifytheGate",
+    "HolyFervor",
     "Requisition",
-    "Grave Rite",
+    "GraveRite",
 }
 
 local PRIORITY_DEBUFFS = {
@@ -159,6 +159,8 @@ local function watchGauntletOffer()
                     
                     print("[CLICK] Clicking card at index", bestCardIndex, ":", bestCardName)
                     
+                    local chooseCard = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.RespondToQuery
+                    chooseCard:FireServer("GauntletOffer",tostring(bestCardName)) 
                     if button:IsA("GuiButton") or button:IsA("TextButton") then
                         firesignal(button.Activated)
                         pcall(function()
