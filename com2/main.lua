@@ -6,7 +6,7 @@ getgenv().AutoClicker = true
 getgenv().Targeting = true 
 getgenv().Ability = false
 getgenv().Boss = true 
-getgenv().BossType = "Executioner" 
+getgenv().BossType = "Destroyer" 
 getgenv().Days = false
 getgenv().InfCheck = false 
 getgenv().TargetScore = 32400 
@@ -24,7 +24,7 @@ getgenv().AimPart = "Head"
 getgenv().EvadeCount = 0
 
 -- [[ TARGETING PRIORITIES ]]
-getgenv().PriorityOnly = true       
+getgenv().PriorityOnly = false       
 getgenv().FrequentPriority = false    
 getgenv().PriorityList = { ["Zombie"] = true }
 getgenv().IgnoreList = {}
@@ -895,15 +895,15 @@ task.spawn(function()
             evadeCountLabel.Text = "Evades: 0/4"
             sendLobbyWebhook()
 
-            if getgenv().Boss then
+            if getgenv().Boss and game.PlaceId == 102358977893515 then
                 lastStartTime = tick()
                 pcall(function()
-                    game:GetService("ReplicatedStorage"):WaitForChild("PartySystem"):FireServer("CREATE", {
-                        RoomID = 9696969691, Boss = getgenv().BossType, Limit = 4, Status = false, Password = generateRandomPassword(15)
+                    game:GetService("ReplicatedStorage"):WaitForChild("PartyHubRemote"):FireServer("CREATE", {
+                        Status = false,Boss = getgenv().BossType,Limit = 4,Password = generateRandomPassword(15)
                     })
                 end)
                 task.wait(1)
-                pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("PartySystem"):FireServer("START") end)
+                pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("PartyHubRemote"):FireServer("START") end)
                 task.wait()
                 applyFastWeapons()
             elseif getgenv().Survival then
