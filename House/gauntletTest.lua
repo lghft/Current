@@ -1702,8 +1702,9 @@ local function Macro()
         placeTower(2, CFrame.new(9932.4345703125, -11.642234802246, -26.928085327148, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
         placeTower(2, CFrame.new(9986.427734375, -11.642234802246, 34.7405128479, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
         placeTower(1, CFrame.new(10009.400390625, -11.847936630249, -12.527061462402, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(9972.3662109375, -11.847936630249, -63.766983032227, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(9944.39453125, -11.847936630249, 41.884967803955, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
+        placeTower(1, CFrame.new(9962.740234375, -11.847936630249, -56.513122558594, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
+        placeTower(1, CFrame.new(9971.94140625, -11.847936630249, 21.695613861084, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
+        towerAnimcCheck()
     end
 
     local function wv3()
@@ -1715,9 +1716,10 @@ local function Macro()
         autoUpgradeTower(1, true, 1)
         autoUpgradeTower(2, true, 1)
         autoUpgradeTower(3, true, 1)
-        autoUpgradeTower(4, true, 1)
         autoUpgradeTower(5, true, 1)
+        autoUpgradeTower(4, true, 1)
         autoUpgradeTower(6, true, 1)
+        towerAnimcCheck()
     end
 
     local function wv9()
