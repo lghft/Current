@@ -18,8 +18,8 @@ local PRIORITY_DEBUFFS = {
     "OpenSecondGate",
     "OpenThirdGate",
     "OpenFourthGate",
-    "AdrenalSurge",
     "ThickHide",
+    "AdrenalSurge",
     "HolyWard",
     "MilitaryWard",
     "UndeadWard",
@@ -54,10 +54,10 @@ local function getScore(cardName, priorityList)
 end
 
 local function pickBestCard(cardNames)
-    local bestName = cardNames[1]
+    local bestIndex = 1
     local bestScore = 9999
 
-    for _, cardName in ipairs(cardNames) do
+    for index, cardName in ipairs(cardNames) do
         local normalizedCard = cardName:gsub(" ", ""):lower()
         local priorityList = PRIORITY_BUFFS
         
@@ -79,11 +79,11 @@ local function pickBestCard(cardNames)
         print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
         if score < bestScore then
             bestScore = score
-            bestName = cardName
+            bestIndex = index  -- Store index instead of name
         end
     end
 
-    return bestName
+    return bestIndex  -- Return the index
 end
 
 local lastSelection = ""
@@ -124,56 +124,55 @@ local function watchGauntletOffer()
                 local cardName = content:FindFirstChild("CardName")
                 if cardName and cardName:IsA("TextLabel") then
                     table.insert(cardNames, cardName.Text)
-                    print("[DEBUG] Found card:", cardName.Text)
+                    --print("[DEBUG] Found card:", cardName.Text)
                 end
             end
         end
         
         if #cardNames == 0 then continue end
         
-        print("[INFO] Cards available:", table.concat(cardNames, ", "))
+        --print("[INFO] Cards available:", table.concat(cardNames, ", "))
         
-        -- Pick best card
         debounce = true
         task.spawn(function()
             task.wait(0.2) -- Give GUI time to settle
             
-            local bestCard = pickBestCard(cardNames)
-            print("[AUTO-PICKER] Best card:", bestCard)
+            local bestCardIndex = pickBestCard(cardNames)
+            local bestCardName = cardNames[bestCardIndex]
+            print("[AUTO-PICKER] Best card:", bestCardName, "(index", bestCardIndex, ")")
             
-            if bestCard ~= lastSelection then
-                lastSelection = bestCard
+            if bestCardName ~= lastSelection then
+                lastSelection = bestCardName
                 
-                -- Find and click the button for this card
-                for _, listing in ipairs(cardRow:GetChildren()) do
-                    if listing.Name:match("^listing%d+$") then
-                        local content = listing:FindFirstChild("Content")
-                        if content then
-                            local cardName = content:FindFirstChild("CardName")
-                            if cardName and cardName.Text == bestCard then
-                                -- Found the card! Now click it
-                                local button = listing:FindFirstChild("Button") or listing
-                                
-                                print("[CLICK] Clicking:", bestCard)
-                                
-                                if button:IsA("GuiButton") or button:IsA("TextButton") then
-                                    firesignal(button.Activated)
-                                    -- Alternative: Try MouseButton1Click
-                                    pcall(function()
-                                        button.MouseButton1Click:Fire()
-                                    end)
-                                else
-                                    -- Try clicking through parent
-                                    pcall(function()
-                                        listing.MouseButton1Click:Fire()
-                                    end)
-                                end
-                                
-                                task.wait(0.5)
-                                break
-                            end
-                        end
+                -- Get listings in order
+                local listings = {}
+                for _, child in ipairs(cardRow:GetChildren()) do
+                    if child.Name:match("^listing%d+$") then
+                        table.insert(listings, child)
                     end
+                end
+                
+                -- Click by index (no name matching needed)
+                if listings[bestCardIndex] then
+                    local listing = listings[bestCardIndex]
+                    local button = listing:FindFirstChild("Button") or listing
+                    
+                    print("[CLICK] Clicking card at index", bestCardIndex, ":", bestCardName)
+                    
+                    if button:IsA("GuiButton") or button:IsA("TextButton") then
+                        firesignal(button.Activated)
+                        pcall(function()
+                            button.MouseButton1Click:Fire()
+                        end)
+                    else
+                        pcall(function()
+                            listing.MouseButton1Click:Fire()
+                        end)
+                    end
+                    
+                    task.wait(0.5)
+                else
+                    print("[ERROR] Could not find listing at index", bestCardIndex)
                 end
             end
             
