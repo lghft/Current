@@ -349,8 +349,8 @@ print("ld flr")
 task.wait()
 
 -- === INITIALIZE PURGE DOORS AFTER PRELOAD === --
-if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
-    print("[Purge Doors] Initializing after preload...")
+if getgenv().Mode == "Event" then
+    print("[Purge Doors] Initializing Event mode...")
     purgeDoors = {
         Holy = {
             prompt = workspace:FindFirstChild("HolyPurgeDoor") and workspace.HolyPurgeDoor:FindFirstChild("HolyPurgeGamepad") and workspace.HolyPurgeDoor.HolyPurgeGamepad:FindFirstChild("Prompt"),
@@ -383,7 +383,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
             element = "Paranormal"
         }
     }
-    print("[Purge Doors] Initialized successfully!")
+    print("[Purge Doors] Event mode initialized successfully!")
 end
 
 local MovFlr = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.MoveToFloor
@@ -574,11 +574,31 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
             
             task.wait(0.5)
             
-            -- Garden uses different remote structure
-            local gardenGamepad = workspace["Garden1-Lobby"].Model.GardenGamepad
-            if gardenGamepad then
+            -- Garden uses GamePad structure
+            local gamepadDir = workspace["Garden1-Lobby"].Model.GardenGamepad.GamePad
+            if gamepadDir then
                 pcall(function()
-                    local startRemote = gardenGamepad:FindFirstChild("RE") and gardenGamepad.RE:FindFirstChild("Start")
+                    local setCapacityRemote = gamepadDir.RF.setCapacity
+                    if setCapacityRemote then
+                        setCapacityRemote:InvokeServer(1)
+                        print("set capacity - 1st call")
+                    end
+                end)
+                
+                task.wait()
+                
+                pcall(function()
+                    local setCapacityRemote = gamepadDir.RF.setCapacity
+                    if setCapacityRemote then
+                        setCapacityRemote:InvokeServer(1)
+                        print("set capacity - 2nd call")
+                    end
+                end)
+                
+                task.wait(0.25)
+                
+                pcall(function()
+                    local startRemote = gamepadDir.RE.Start
                     if startRemote then
                         startRemote:FireServer()
                         print("started garden")
@@ -710,41 +730,21 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                 
                 task.wait()
                 
-                -- Try to find the GamePad directory for Garden mode
                 local gamePadDir = targetDoor.data.gamepad
-                
-                -- Fallback: Look for GamePad in the door prompt's parent or workspace
-                if not gamePadDir or not gamePadDir:FindFirstChild("RF") then
-                    pcall(function()
-                        -- Try direct workspace path for Garden elements
-                        local gardenLobby = workspace:FindFirstChild("Garden1-Lobby")
-                        if gardenLobby then
-                            local model = gardenLobby:FindFirstChild("Model")
-                            if model then
-                                local gardenGamepad = model:FindFirstChild("GardenGamepad")
-                                if gardenGamepad then
-                                    gamePadDir = gardenGamepad:FindFirstChild("GamePad")
-                                end
-                            end
-                        end
-                    end)
-                end
                 
                 if gamePadDir then
                     pcall(function()
-                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        local setCapacityRemote = gamePadDir.RF.setCapacity
                         if setCapacityRemote then
                             setCapacityRemote:InvokeServer(1)
                             print("set capacity - 1st call")
-                        else
-                            warn("setCapacity remote not found at: " .. gamePadDir:GetFullName())
                         end
                     end)
 
                     task.wait()
 
                     pcall(function()
-                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        local setCapacityRemote = gamePadDir.RF.setCapacity
                         if setCapacityRemote then
                             setCapacityRemote:InvokeServer(1)
                             print("set capacity - 2nd call")
@@ -754,12 +754,10 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                     task.wait(0.25)
 
                     pcall(function()
-                        local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
+                        local startRemote = gamePadDir.RE.Start
                         if startRemote then
                             startRemote:FireServer()
-                            print("started event/garden")
-                        else
-                            warn("Start remote not found at: " .. gamePadDir:GetFullName())
+                            print("started garden/event")
                         end
                     end)
                 else
