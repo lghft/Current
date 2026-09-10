@@ -1694,9 +1694,10 @@ local function Macro()
             end
         end
     end)
-
+    spd(2)
     -- Wave actions (TEMPLATE - CLEAR AND CUSTOMIZE)
     local function wv1()
+        spd(2)
         placeTower(2, CFrame.new(9996.3876953125, -11.642234802246, -26.427516937256, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
         placeTower(2, CFrame.new(9932.4345703125, -11.642234802246, -26.928085327148, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
         placeTower(2, CFrame.new(9986.427734375, -11.642234802246, 34.7405128479, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
@@ -1805,5 +1806,7 @@ local function Macro()
     end)
 end
 enemyfpsBoost()
-
+task.spawn(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+end)
 Macro()
