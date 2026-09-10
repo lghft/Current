@@ -184,7 +184,7 @@ local function watchGauntletOffer()
                     if button:IsA("GuiButton") or button:IsA("TextButton") then
                         firesignal(button.Activated)
                         pcall(function()
-                            clickButton(ClickOnPart)
+                            clickButton(button)
                         end)
                         pcall(function()
                             button.MouseButton1Click:Fire()
