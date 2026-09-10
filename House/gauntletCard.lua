@@ -18,8 +18,8 @@ local PRIORITY_DEBUFFS = {
     "OpenSecondGate",
     "OpenThirdGate",
     "OpenFourthGate",
-    "ThickHide",
     "AdrenalSurge",
+    "ThickHide",
     "HolyWard",
     "MilitaryWard",
     "UndeadWard",
@@ -76,7 +76,7 @@ local function pickBestCard(cardNames)
         end
 
         local score = getScore(cardName, priorityList)
-        --print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
+        print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
         if score < bestScore then
             bestScore = score
             bestName = cardName
@@ -124,14 +124,14 @@ local function watchGauntletOffer()
                 local cardName = content:FindFirstChild("CardName")
                 if cardName and cardName:IsA("TextLabel") then
                     table.insert(cardNames, cardName.Text)
-                    --print("[DEBUG] Found card:", cardName.Text)
+                    print("[DEBUG] Found card:", cardName.Text)
                 end
             end
         end
         
         if #cardNames == 0 then continue end
         
-        --print("[INFO] Cards available:", table.concat(cardNames, ", "))
+        print("[INFO] Cards available:", table.concat(cardNames, ", "))
         
         -- Pick best card
         debounce = true
@@ -139,7 +139,7 @@ local function watchGauntletOffer()
             task.wait(0.2) -- Give GUI time to settle
             
             local bestCard = pickBestCard(cardNames)
-            --print("[AUTO-PICKER] Best card:", bestCard)
+            print("[AUTO-PICKER] Best card:", bestCard)
             
             if bestCard ~= lastSelection then
                 lastSelection = bestCard
