@@ -92,7 +92,7 @@ local function pickBestCard(cardNames)
         end
 
         local score = getScore(cardName, priorityList)
-        print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
+        --print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
         if score < bestScore then
             bestScore = score
             bestIndex = index  -- Store index instead of name
