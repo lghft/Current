@@ -139,7 +139,7 @@ local function watchGauntletOffer()
             
             local bestCardIndex = pickBestCard(cardNames)
             local bestCardName = cardNames[bestCardIndex]
-            print("[AUTO-PICKER] Best card:", bestCardName, "(index", bestCardIndex, ")")
+            --print("[AUTO-PICKER] Best card:", bestCardName, "(index", bestCardIndex, ")")
             
             if bestCardName ~= lastSelection then
                 lastSelection = bestCardName
@@ -158,9 +158,13 @@ local function watchGauntletOffer()
                     local button = listing:FindFirstChild("Button") or listing
                     
                     print("[CLICK] Clicking card at index", bestCardIndex, ":", bestCardName)
-                    
+                    task.spawn(function()
+                        local chooseCard = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.RespondToQuery
+                        chooseCard:FireServer("GauntletOffer",tostring(bestCardName)) 
+                    end)
                     local chooseCard = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.RespondToQuery
-                    chooseCard:FireServer("GauntletOffer",tostring(bestCardName)) 
+                    chooseCard:FireServer("GauntletOffer",tostring(bestCardIndex)) 
+
                     if button:IsA("GuiButton") or button:IsA("TextButton") then
                         firesignal(button.Activated)
                         pcall(function()
