@@ -53,6 +53,22 @@ local function getScore(cardName, priorityList)
     return 999
 end
 
+function clickButton(ClickOnPart)
+    local vim = game:GetService("VirtualInputManager")
+    local inset1, inset2 = game:GetService("GuiService"):GetGuiInset()
+    local insetOffset = inset1 - inset2
+    local part = ClickOnPart
+    local topLeft = part.AbsolutePosition + insetOffset
+    local center = topLeft + (part.AbsoluteSize / 2)
+    local X = center.X + 15
+    local Y = center.Y
+    vim:SendMouseButtonEvent(X, Y, 0, true, game, 0)
+    task.wait(0.1)
+    vim:SendMouseButtonEvent(X, Y, 0, false, game, 0)
+    task.wait(1)
+    Notify("Print", "Clicked: " .. tostring(ClickOnPart))
+end
+
 local function pickBestCard(cardNames)
     local bestIndex = 1
     local bestScore = 9999
@@ -167,6 +183,9 @@ local function watchGauntletOffer()
 
                     if button:IsA("GuiButton") or button:IsA("TextButton") then
                         firesignal(button.Activated)
+                        pcall(function()
+                            clickButton(ClickOnPart)
+                        end)
                         pcall(function()
                             button.MouseButton1Click:Fire()
                         end)
