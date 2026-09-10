@@ -1724,6 +1724,9 @@ local function Macro()
         placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
 
         towerAnimcCheck()
+        task.spawn(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+        end)
     end
 
     local function wv3()
