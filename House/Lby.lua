@@ -51,7 +51,7 @@ end)
 task.wait(4)
 local player = game.Players.LocalPlayer
 local proximityThreshold = 10 -- Adjust this distance as needed
-getgenv().Mode = "Event" --Story,Event,Garden
+getgenv().Mode = "Garden" --Story,Event,Garden
 getgenv().Floor = 4 -- Event:1, Garden:1
 getgenv().Stage = 4 
 getgenv().eventStage = "Military"
@@ -461,32 +461,28 @@ print("Player is close to Exit!")
 if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
     print("Starting " .. getgenv().Mode .. " mode selection...")
     
-    -- Get open purge doors
-    local openDoors = getOpenPurgeDoors()
-    
-    if #openDoors == 0 then
-        warn("No purge doors are currently open!")
-    else
-        print("Found " .. #openDoors .. " open doors")
-        for _, doorInfo in pairs(openDoors) do
-            print("  - " .. doorInfo.name .. " (Priority: " .. doorInfo.data.priority .. ")")
+    -- === GARDEN MODE === --
+    if getgenv().Mode == "Garden" then
+        print("Detected Garden mode - using direct entrance...")
+        
+        local gardenPromptPart = workspace:FindFirstChild("Garden1-Lobby")
+        if gardenPromptPart then
+            gardenPromptPart = gardenPromptPart:FindFirstChild("Model")
+        end
+        if gardenPromptPart then
+            gardenPromptPart = gardenPromptPart:FindFirstChild("GardenGamepad")
+        end
+        if gardenPromptPart then
+            gardenPromptPart = gardenPromptPart:FindFirstChild("Prompt")
         end
         
-        -- Select door based on eventStage
-        local targetDoor = getDoorByEventStage(openDoors, getgenv().eventStage)
-        print("Selected door: " .. targetDoor.name)
-        
-        -- Wait for correct loadout
-        local loadoutCorrect = waitForCorrectLoadout(targetDoor.name, 120)
-        
-        if loadoutCorrect and targetDoor.data.prompt then
-            promptPart = targetDoor.data.prompt
-            proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
+        if gardenPromptPart then
+            proximityPrompt = gardenPromptPart:FindFirstChildWhichIsA("ProximityPrompt")
+            promptPart = gardenPromptPart
             
             local targetPos = promptPart.WorldCFrame.Position
             getgenv().TeleLoop = true
             
-            -- Only create platform if using teleport mode
             local platform
             if not getgenv().Walk then
                 local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
@@ -501,7 +497,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                 platform.Transparency = 0.3
                 platform.Parent = workspace
                 task.wait(1)
-                print("created platform?")
+                print("created platform")
             end
             
             if getgenv().Walk == true then
@@ -511,7 +507,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                     local humanoid = char:FindFirstChild("Humanoid")
                     if humanoid then
                         humanoid:MoveTo(targetPos)
-                        print("Walking to " .. targetDoor.name .. " door...")
+                        print("Walking to Garden entrance...")
                         
                         local walkTimeout = tick() + 120
                         repeat
@@ -522,7 +518,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                             if humanoidRoot then
                                 local distance = (humanoidRoot.Position - targetPos).Magnitude
                                 if distance <= proximityThreshold then
-                                    print("Reached " .. targetDoor.name .. " door! Distance: " .. tostring(distance))
+                                    print("Reached Garden entrance! Distance: " .. tostring(distance))
                                     getgenv().TeleLoop = false
                                     break
                                 end
@@ -550,7 +546,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                     local distance = (humanoidRoot.Position - targetPos).Magnitude
                     if distance <= proximityThreshold then
                         getgenv().TeleLoop = false
-                        print("Teleport loop broken at " .. targetDoor.name .. " door!")
+                        print("Teleport loop broken at Garden entrance!")
                         break
                     else
                         humanoidRoot.Velocity = Vector3.new(0, 0, 0)
@@ -573,45 +569,182 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                 proximityPrompt.MaxActivationDistance = math.huge
                 proximityPrompt.HoldDuration = 0
                 fireproximityprompt(proximityPrompt)
-                warn("Prompt fired for: " .. targetDoor.name)
+                warn("Prompt fired for Garden entrance!")
             end
             
-            task.wait()
+            task.wait(0.5)
             
-            local gamePadDir = targetDoor.data.gamepad
-            if gamePadDir then
+            -- Garden uses different remote structure
+            local gardenGamepad = workspace["Garden1-Lobby"].Model.GardenGamepad
+            if gardenGamepad then
                 pcall(function()
-                    local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
-                    if setCapacityRemote then
-                        setCapacityRemote:InvokeServer(1)
-                        print("set capacity")
-                    end
-                end)
-
-                task.wait()
-
-                pcall(function()
-                    local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
-                    if setCapacityRemote then
-                        setCapacityRemote:InvokeServer(1)
-                        print("set capacity")
-                    end
-                end)
-
-                task.wait(0.25)
-
-                pcall(function()
-                    local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
+                    local startRemote = gardenGamepad:FindFirstChild("RE") and gardenGamepad.RE:FindFirstChild("Start")
                     if startRemote then
                         startRemote:FireServer()
-                        print("started event")
+                        print("started garden")
                     end
                 end)
-            else
-                warn("Could not find GamePad for " .. targetDoor.name)
             end
         else
-            warn("Loadout check failed or prompt not found for " .. targetDoor.name)
+            warn("Could not find Garden entrance!")
+        end
+    
+    -- === EVENT MODE === --
+    else
+        print("Detected Event mode - using purge doors...")
+        
+        -- Get open purge doors
+        local openDoors = getOpenPurgeDoors()
+        
+        if #openDoors == 0 then
+            warn("No purge doors are currently open!")
+        else
+            print("Found " .. #openDoors .. " open doors")
+            for _, doorInfo in pairs(openDoors) do
+                print("  - " .. doorInfo.name .. " (Priority: " .. doorInfo.data.priority .. ")")
+            end
+            
+            -- Select door based on eventStage
+            local targetDoor = getDoorByEventStage(openDoors, getgenv().eventStage)
+            print("Selected door: " .. targetDoor.name)
+            
+            -- Wait for correct loadout
+            local loadoutCorrect = waitForCorrectLoadout(targetDoor.name, 120)
+            
+            if loadoutCorrect and targetDoor.data.prompt then
+                promptPart = targetDoor.data.prompt
+                proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
+                
+                local targetPos = promptPart.WorldCFrame.Position
+                getgenv().TeleLoop = true
+                
+                -- Only create platform if using teleport mode
+                local platform
+                if not getgenv().Walk then
+                    local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
+                    platform = Instance.new("Part")
+                    platform.Name = "dgdfghrthhfgplatform"
+                    platform.Shape = Enum.PartType.Block
+                    platform.Size = Vector3.new(10, 1, 10)
+                    platform.Color = Color3.fromRGB(0, 255, 0)
+                    platform.Material = Enum.Material.Neon
+                    platform.CanCollide = true
+                    platform.CFrame = CFrame.new(platPos)
+                    platform.Transparency = 0.3
+                    platform.Parent = workspace
+                    task.wait(1)
+                    print("created platform?")
+                end
+                
+                if getgenv().Walk == true then
+                    -- WALK MODE
+                    local char = player.Character
+                    if char then
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid:MoveTo(targetPos)
+                            print("Walking to " .. targetDoor.name .. " door...")
+                            
+                            local walkTimeout = tick() + 120
+                            repeat
+                                task.wait(0.1)
+                                char = player.Character
+                                if not char then break end
+                                local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                                if humanoidRoot then
+                                    local distance = (humanoidRoot.Position - targetPos).Magnitude
+                                    if distance <= proximityThreshold then
+                                        print("Reached " .. targetDoor.name .. " door! Distance: " .. tostring(distance))
+                                        getgenv().TeleLoop = false
+                                        break
+                                    end
+                                    if humanoid:GetState() == Enum.HumanoidStateType.Running or humanoid:GetState() == Enum.HumanoidStateType.Landed then
+                                        humanoid:MoveTo(targetPos)
+                                    end
+                                end
+                                if tick() > walkTimeout then
+                                    warn("Walk timeout!")
+                                    break
+                                end
+                            until false
+                        end
+                    end
+                else
+                    -- TELEPORT MODE
+                    while getgenv().TeleLoop do
+                        task.wait()
+                        local char = player.Character
+                        if not char then continue end
+                        local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if not humanoidRoot or not humanoid then continue end
+                        
+                        local distance = (humanoidRoot.Position - targetPos).Magnitude
+                        if distance <= proximityThreshold then
+                            getgenv().TeleLoop = false
+                            print("Teleport loop broken at " .. targetDoor.name .. " door!")
+                            break
+                        else
+                            humanoidRoot.Velocity = Vector3.new(0, 0, 0)
+                            humanoidRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+                            humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+                            
+                            task.spawn(function()
+                                humanoidRoot.CFrame = CFrame.new(targetPos)
+                                task.wait()
+                            end)
+                        end
+                    end
+                end
+                
+                task.wait(1)
+                
+                if proximityPrompt then
+                    proximityPrompt.MaxActivationDistance = math.huge
+                    proximityPrompt.HoldDuration = 0
+                    fireproximityprompt(proximityPrompt)
+                    warn("Prompt fired for: " .. targetDoor.name)
+                end
+                
+                task.wait()
+                
+                local gamePadDir = targetDoor.data.gamepad
+                if gamePadDir then
+                    pcall(function()
+                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        if setCapacityRemote then
+                            setCapacityRemote:InvokeServer(1)
+                            print("set capacity")
+                        end
+                    end)
+
+                    task.wait()
+
+                    pcall(function()
+                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        if setCapacityRemote then
+                            setCapacityRemote:InvokeServer(1)
+                            print("set capacity")
+                        end
+                    end)
+
+                    task.wait(0.25)
+
+                    pcall(function()
+                        local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
+                        if startRemote then
+                            startRemote:FireServer()
+                            print("started event")
+                        end
+                    end)
+                else
+                    warn("Could not find GamePad for " .. targetDoor.name)
+                end
+            else
+                warn("Loadout check failed or prompt not found for " .. targetDoor.name)
+            end
         end
     end
 
