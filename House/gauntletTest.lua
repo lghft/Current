@@ -1742,20 +1742,36 @@ local function Macro()
         autoUpgradeTower(4, true, 1)
         autoUpgradeTower(6, true, 1)
         towerAnimcCheck()
+        task.spawn(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+        end)
     end
 
     local function wv9()
         -- ADD YOUR WAVE 9 ACTIONS HERE
         Notify("print", "[Wave 9]")
+        task.spawn(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+        end)
     end
 
     local function wv19()
         -- ADD YOUR WAVE 19 ACTIONS HERE
         Notify("print", "[Wave 19]")
+        task.spawn(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+        end)
+    end
+    local function wv25()
+        -- ADD YOUR WAVE 25 ACTIONS HERE
+        Notify("print", "[Wave 25]")
+        task.spawn(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
+        end)
     end
     
     local waveActions = {
-        [1] = wv1, [3] = wv3, [5] = wv5, [9] = wv9, [19] = wv19
+        [1] = wv1, [3] = wv3, [5] = wv5, [9] = wv9, [19] = wv19, [25] = wv25
     }
 
     -- Wave detection loop
