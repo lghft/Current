@@ -51,11 +51,23 @@ end)
 task.wait(4)
 local player = game.Players.LocalPlayer
 local proximityThreshold = 10 -- Adjust this distance as needed
-getgenv().Mode = "Garden" --Story,Event,Garden
+
+-- === GLOBAL SETTINGS === --
+getgenv().Mode = "Raid" --Story,Event,Garden,Raid
 getgenv().Floor = 4 -- Event:1, Garden:1
 getgenv().Stage = 4 
+getgenv().raidStage = 2 
 getgenv().eventStage = "Military"
 getgenv().Walk = true
+
+-- RAID SPECIFIC SETTINGS
+getgenv().raidCapacity = 1
+getgenv().raidModifiersEnabled = {
+    [1] = true, -- Usually Faction Lock (e.g., HolyOnly, DemonOnly)
+    [2] = true, -- Stat Boost 1 (e.g., Speed)
+    [3] = true, -- Stat Boost 2 (e.g., Health, Damage)
+    [4] = true  -- Special (e.g., HalfCash, NoSell, Range)
+}
 
 if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
     getgenv().Floor = 1
@@ -349,7 +361,19 @@ print("ld flr")
 task.wait()
 
 -- === INITIALIZE PURGE DOORS AFTER PRELOAD === --
-if getgenv().Mode == "Event" then
+if getgenv().Mode == "Garden" then
+    print("[Purge Doors] Initializing Garden mode...")
+    local gardenGamepad = workspace:FindFirstChild("Garden1-Lobby") and workspace["Garden1-Lobby"]:FindFirstChild("Model") and workspace["Garden1-Lobby"].Model:FindFirstChild("GardenGamepad") and workspace["Garden1-Lobby"].Model.GardenGamepad:FindFirstChild("GamePad")
+    purgeDoors = {
+        Military = {
+            prompt = workspace:FindFirstChild("_Floors") and workspace._Floors:FindFirstChild("GardenFloor") and workspace._Floors.GardenFloor:FindFirstChild("Room1") and workspace._Floors.GardenFloor.Room1:FindFirstChild("Door"),
+            gamepad = gardenGamepad,
+            priority = 1,
+            element = "Military"
+        }
+    }
+    print("[Purge Doors] Garden mode initialized successfully!")
+elseif getgenv().Mode == "Event" then
     print("[Purge Doors] Initializing Event mode...")
     purgeDoors = {
         Holy = {
@@ -440,22 +464,6 @@ end
 local promptPart = getTargetPromptPart(getgenv().Floor, getgenv().Stage)
 print(promptPart)
 local proximityPrompt = nil
---[[
-local exitPart = workspace._Floors.Floor4["Story#Floor4Elevator"].Exit
-repeat
-    task.wait(0.1)
-    local char = player.Character
-    if char then
-        local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
-        if humanoidRoot then
-            local distance = (humanoidRoot.Position - exitPart.CFrame.Position).Magnitude
-            print("Distance to Exit: " .. tostring(distance))
-        end
-    end
-until (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and (player.Character.HumanoidRootPart.Position - exitPart.CFrame.Position).Magnitude <= proximityThreshold)
-
-print("Player is close to Exit!")
-]]
 
 -- === EVENT/GARDEN MODE === --
 if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
@@ -574,31 +582,11 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
             
             task.wait(0.5)
             
-            -- Garden uses GamePad structure
-            local gamepadDir = workspace["Garden1-Lobby"].Model.GardenGamepad.GamePad
-            if gamepadDir then
+            -- Garden uses different remote structure
+            local gardenGamepad = workspace["Garden1-Lobby"].Model.GardenGamepad
+            if gardenGamepad then
                 pcall(function()
-                    local setCapacityRemote = gamepadDir.RF.setCapacity
-                    if setCapacityRemote then
-                        setCapacityRemote:InvokeServer(1)
-                        print("set capacity - 1st call")
-                    end
-                end)
-                
-                task.wait()
-                
-                pcall(function()
-                    local setCapacityRemote = gamepadDir.RF.setCapacity
-                    if setCapacityRemote then
-                        setCapacityRemote:InvokeServer(1)
-                        print("set capacity - 2nd call")
-                    end
-                end)
-                
-                task.wait(0.25)
-                
-                pcall(function()
-                    local startRemote = gamepadDir.RE.Start
+                    local startRemote = gardenGamepad:FindFirstChild("RE") and gardenGamepad.RE:FindFirstChild("Start")
                     if startRemote then
                         startRemote:FireServer()
                         print("started garden")
@@ -767,6 +755,90 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                 warn("Loadout check failed or prompt not found for " .. targetDoor.name)
             end
         end
+    end
+-- === RAID MODE === --
+elseif getgenv().Mode == "Raid" then
+    print("Starting Raid mode...")
+    
+    -- Modifier database (dynamically mapped from raidFunc)
+    local raidModifiersDB = {
+        [1] = {"DemonOnly", "Speed25", "Health25", "HalfCash"},
+        [2] = {"HolyOnly", "Speed25", "Health25", "Range30"},
+        [3] = {"MilitaryOnly", "Health50", "Damage25", "NoSell"},
+        [4] = {"UndeadOnly", "Speed40", "Range30", "AtkSpeed25"},
+        [5] = {"ParanormalOnly", "Speed40", "Health50", "NoSell"}
+    }
+    
+    local currentStage = tonumber(getgenv().raidStage) or 1
+    local floorModifiers = raidModifiersDB[currentStage]
+    local activeModifiers = {}
+    
+    -- Build the modifier list
+    if floorModifiers then
+        for i = 1, 4 do
+            if getgenv().raidModifiersEnabled[i] then
+                table.insert(activeModifiers, floorModifiers[i])
+            end
+        end
+    else
+        warn("No modifiers found for Floor " .. tostring(currentStage))
+    end
+    
+    -- Dynamically locate the Gamepad based on exact paths
+    local function getRaidGamepad(stage)
+        if stage == 1 then 
+            return workspace:FindFirstChild("Floor1RaidDoor") and workspace.Floor1RaidDoor:FindFirstChild("Floor1Gamepad") 
+        end
+        if stage == 2 then 
+            return workspace:FindFirstChild("Floor2RaidDoor") and workspace.Floor2RaidDoor:FindFirstChild("Floor2Gamepad") 
+        end
+        
+        local fightPits = workspace:FindFirstChild("_Floors") and workspace._Floors:FindFirstChild("FightPits")
+        if fightPits then
+            if stage == 3 then 
+                return fightPits:FindFirstChild("Floor3Raid") and fightPits.Floor3Raid:FindFirstChild("Floor3Gamepad") 
+            end
+            if stage == 4 then 
+                return fightPits:FindFirstChild("Floor4Raids") and fightPits.Floor4Raids:FindFirstChild("Floor4Gamepad") 
+            end
+            if stage == 5 then 
+                return fightPits:FindFirstChild("Floor5Raid") and fightPits.Floor5Raid:FindFirstChild("Floor5Gamepad") 
+            end
+        end
+        return nil
+    end
+
+    local success, err = pcall(function()
+        local gamepadModel = getRaidGamepad(currentStage)
+        if not gamepadModel or not gamepadModel:FindFirstChild("GamePad") then
+            error("Could not find the GamePad directory for Raid Floor " .. currentStage)
+        end
+        
+        local gamePad = gamepadModel.GamePad
+        
+        -- Set Capacity
+        local setCapacityRemote = gamePad:FindFirstChild("RF") and gamePad.RF:FindFirstChild("setCapacity")
+        if setCapacityRemote then
+            local capacity = tonumber(getgenv().raidCapacity) or 1
+            setCapacityRemote:InvokeServer(capacity)
+            print("Set Raid capacity to: " .. tostring(capacity))
+        end
+        
+        task.wait(0.2) 
+        
+        -- Join Raid
+        local joinEvent = gamePad:FindFirstChild("RE") and gamePad.RE:FindFirstChild("RequestJoin")
+        if joinEvent then
+            joinEvent:FireServer("Floor" .. currentStage, activeModifiers)
+        else
+            error("RequestJoin remote not found!")
+        end
+    end)
+    
+    if success then
+        print("Joined Raid Floor " .. currentStage .. " with modifiers: " .. table.concat(activeModifiers, ", "))
+    else
+        warn("Failed to join Raid: " .. tostring(err))
     end
 
 -- === STORY MODE === --
