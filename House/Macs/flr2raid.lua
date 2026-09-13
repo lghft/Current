@@ -1544,7 +1544,7 @@ local function Macro()
     
     if difficultyGui then
         Notify("print", "[Macro] Difficulty vote GUI found! Voting...")
-        voteDifficulty("PurgeHorror",0)--Normal Horror, PurgeHorror
+        voteDifficulty("Horror",0)--Normal, Horror, PurgeHorror
 
         Notify("print", "[Macro] Waiting for vote GUI to disappear...")
         repeat task.wait(0.25) until not findDynamicGui(PlayerGui, {"MainHud", "DifficultyVote"})
