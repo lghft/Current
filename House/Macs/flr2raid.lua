@@ -1694,11 +1694,11 @@ local function Macro()
             end
         end
     end)
-
+    spd(2)
     -- Wave actions
     local function wv1()
         Notify("print", "[Wave 1] Placing towers sequentially.")
-        
+        spd(2)
         -- 1. Place Ravers (Slot 4) -> Indexes 1 to 3
         placeTower(4, CFrame.new(9997.357421875, -7.8874640464783, 0.77599334716797, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
         placeTower(4, CFrame.new(9957.1083984375, -7.8874640464783, -9.0222244262695, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
