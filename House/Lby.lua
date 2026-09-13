@@ -63,7 +63,7 @@ getgenv().Walk = true
 -- RAID SPECIFIC SETTINGS
 getgenv().raidCapacity = 1
 getgenv().raidModifiersEnabled = {
-    [1] = true, -- Usually Faction Lock (e.g., HolyOnly, DemonOnly)
+    [1] = false, -- Usually Faction Lock (e.g., HolyOnly, DemonOnly)
     [2] = true, -- Stat Boost 1 (e.g., Speed)
     [3] = true, -- Stat Boost 2 (e.g., Health, Damage)
     [4] = true  -- Special (e.g., HalfCash, NoSell, Range)
