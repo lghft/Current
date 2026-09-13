@@ -816,29 +816,49 @@ elseif getgenv().Mode == "Raid" then
         
         local gamePad = gamepadModel.GamePad
         
-        -- Set Capacity
-        local setCapacityRemote = gamePad:FindFirstChild("RF") and gamePad.RF:FindFirstChild("setCapacity")
-        if setCapacityRemote then
-            local capacity = tonumber(getgenv().raidCapacity) or 1
-            setCapacityRemote:InvokeServer(capacity)
-            print("Set Raid capacity to: " .. tostring(capacity))
-        end
-        
-        task.wait(0.2) 
-        
         -- Join Raid
         local joinEvent = gamePad:FindFirstChild("RE") and gamePad.RE:FindFirstChild("RequestJoin")
         if joinEvent then
             joinEvent:FireServer("Floor" .. currentStage, activeModifiers)
+            print("Requested to join Raid Floor " .. currentStage)
         else
             error("RequestJoin remote not found!")
+        end
+        
+        task.wait(0.5)
+        
+        -- Set Capacity Loop & Start Match
+        local playerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+        local mainHud = playerGui and playerGui:FindFirstChild("MainHud")
+        local hud = mainHud and mainHud:FindFirstChild("Hud")
+        local gamepadScreen = hud and hud:FindFirstChild("GamepadScreen")
+        
+        if gamepadScreen then
+            local setCapacityRemote = gamePad:FindFirstChild("RF") and gamePad.RF:FindFirstChild("setCapacity")
+            local startRemote = gamePad:FindFirstChild("RE") and gamePad.RE:FindFirstChild("Start")
+            local capacity = tonumber(getgenv().raidCapacity) or 1
+            
+            -- Loop setCapacity a few times to ensure it registers
+            for i = 1, 3 do
+                if setCapacityRemote then
+                    pcall(function() setCapacityRemote:InvokeServer(capacity) end)
+                    print("Set Raid capacity to: " .. tostring(capacity) .. " (Attempt " .. i .. ")")
+                end
+                task.wait(0.25)
+            end
+            
+            -- Start Match
+            if startRemote then
+                pcall(function() startRemote:FireServer() end)
+                print("Fired Start match!")
+            end
         end
     end)
     
     if success then
-        print("Joined Raid Floor " .. currentStage .. " with modifiers: " .. table.concat(activeModifiers, ", "))
+        print("Successfully processed Raid Floor " .. currentStage)
     else
-        warn("Failed to join Raid: " .. tostring(err))
+        warn("Failed to process Raid: " .. tostring(err))
     end
 
 -- === STORY MODE === --
