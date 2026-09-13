@@ -75,7 +75,9 @@ local function sendWebhook()
     local targetItems = {
         ["Coins"] = "Coins",
         ["VoodooTokens"] = "VoodooTokens",
-        ["PurgeCoins"] = "PurgeCoins"
+        --["PurgeCoins"] = "PurgeCoins",
+        ["RaidTokens"] = "RaidTokens",
+        ["GardenCoins"] = "GardenCoins"
     }
 
     local foundItems = {}
