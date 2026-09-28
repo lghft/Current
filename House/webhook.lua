@@ -71,20 +71,20 @@ local function sendWebhook()
         return
     end
 
-    -- Define target inventory items to extract
+    -- Define target inventory items in desired order
     local targetItems = {
-        ["Coins"] = "Coins",
-        ["VoodooTokens"] = "VoodooTokens",
-        --["PurgeCoins"] = "PurgeCoins",
-        ["RaidTokens"] = "RaidTokens",
-        ["GardenCoins"] = "GardenCoins"
+        "Coins",
+        "VoodooToken",
+        "GardenCoins",
+        "RaidTokens",
+        "KingsToken"
     }
 
     local foundItems = {}
     if inventoryData then
-        for itemId, itemData in pairs(inventoryData) do
-            if targetItems[itemId] then
-                local amount = itemData.amount or 1
+        for _, itemId in ipairs(targetItems) do
+            if inventoryData[itemId] then
+                local amount = inventoryData[itemId].amount or 1
                 table.insert(foundItems, string.format("`%s:%d`", itemId, amount))
             end
         end
