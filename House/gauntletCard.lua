@@ -23,50 +23,60 @@ end
 
 --------------------------------------------------------------------
 -- PRIORITY LISTS
+-- Names are matched against the card's displayed name (spaces,
+-- apostrophes and other non-letters are ignored, case-insensitive).
 --------------------------------------------------------------------
 local PRIORITY_BUFFS = {
-    "Reinforcements",
-    "SharpenedEdges",
-    "Overclock",
-    "DemonPact",
-    "ParanormalReach",
-    "FortifytheGate",
-    "HolyFervor",
-    "Requisition",
-    "GraveRite",
+    "Reinforcements",   -- Legendary (wave 100+): +1 unit placement, any unit.
+    "ParanormalReach",  -- Epic: Paranormal towers gain 10% range.
+    "SharpenedEdges",   -- Rare: All towers deal 10/15/20/30% more damage (tiers).
+    "Overclock",        -- Rare: All towers attack 10/15/20% faster (tiers).
+    "HolyFervor",       -- Epic: Holy towers deal 15% more damage.
+    "Requisition",      -- Epic: Military towers deal 15% more damage.
+    "GraveRite",        -- Epic: Undead towers deal 15% more damage.
+    "DemonPact",        -- Epic: Demon towers deal 15% more damage.
+    "FortifytheGate",   -- Epic ("Fortify the Gate"): +25/35/50/75/100 base health (tiers).
 }
 
 local PRIORITY_DEBUFFS = {
-    "OpenSecondGate",
-    "OpenThirdGate",
-    "OpenFourthGate",
-    "ThickHide",
-    "AdrenalSurge",
-    "HolyWard",
-    "MilitaryWard",
-    "UndeadWard",
-    "ParanormalWard",
-    "DemonWard",
+    "OpenTheSecondGate", -- Rare: Second track opens early (gives way at wave 9 regardless).
+    "OpenTheThirdGate",  -- Epic: Third track opens early (gives way at wave 24 regardless). Requires second gate open.
+    "OpenTheFourthGate", -- Legendary: Fourth track opens early (gives way at wave 45 regardless). Requires third gate open.
+    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
+    "DemonWard",         -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Demon towers. Forever.
+    "UndeadWard",        -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Undead towers. Forever.
+    "ParanormalWard",    -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Paranormal towers. Forever.
+    "HolyWard",          -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Holy towers. Forever.
+    "MilitaryWard",      -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Military towers. Forever.
+    "ThickHide",         -- Common: Enemies gain 10% health (waves up to 75), or 5% health (wave 76+). Repeatable.
 }
 
 local PRIORITY_MOBS = {
-    "EvilEye",
-    "DemonPack",
-    "ClipperBloom",
-    "SporeStorm",
-    "GargoyleRoost",
-    "CrimsonBloom",
-    "ChompersToll",
-    "HiveGrowth",
-    "NightTerrors",
-    "WildHunt",
+    "EvilEye",          -- Epic: A Gazer joins every third wave. Its eye stays shut... for now.
+    "DemonPack",        -- Rare (max wave 25): 3 more Demon Minions every wave.
+    "ClipperBloom",     -- Common (max wave 25): 4 more Clippers every wave.
+    "SporeStorm",       -- Common (max wave 25): 6 more Spores every wave.
+    "GargoyleRoost",    -- Rare (waves 22-50): 3 more Gargoyle Minions every wave.
+    "CrimsonBloom",     -- Epic (waves 22-50): 2 more Red Spores every wave.
+    "ChompersToll",     -- Epic ("Chomper's Toll", waves 47-75): Two Chompers join every wave.
+    "WildHunt",         -- Epic: The Deer joins every third wave. It only watches... for now.
+    "HiveGrowth",       -- Legendary (waves 47-75): 2 more Bees every wave. Slow, and very hard to put down.
+    "NightTerrors",     -- Epic: A Bat joins every third wave. It sleeps... for now.
+    "SleeplessEye",     -- Rare (waves 55-120, needs Evil Eye): A Gazer every 2 waves, then every single wave.
+    "QuickenedHunt",    -- Rare (waves 70-120, needs Wild Hunt): The Deer every 2 waves, then every single wave.
+    "PetrifyingGaze",   -- Epic (wave 75+, needs Evil Eye): Gazers have a 25/50/75/100% chance to stun towers.
+    "PrimalCharge",     -- Epic (wave 90+, needs Wild Hunt): The Deer has a 25/50/75/100% chance to charge.
+    "RestlessRoost",    -- Rare (waves 40-120, needs Night Terrors): A Bat every 2 waves, then every single wave.
+    "SnatchingScreech", -- Epic (wave 60+, needs Night Terrors): Bats have a 25/50/75/100% chance to snatch towers.
 }
 
 --------------------------------------------------------------------
 -- SCORING
 --------------------------------------------------------------------
+-- Lowercase and strip everything that isn't a letter, so
+-- "Chomper's Toll" and "ChompersToll" both become "chomperstoll".
 local function normalize(name)
-    return (name:gsub(" ", ""):lower())
+    return (name:lower():gsub("[^%a]", ""))
 end
 
 local function getScore(cardName, priorityList)
