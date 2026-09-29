@@ -1,7 +1,29 @@
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GuiService = game:GetService("GuiService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+--------------------------------------------------------------------
+-- CONFIG
+--------------------------------------------------------------------
+local POLL_INTERVAL = 0.1     -- how often to check for an offer
+local SETTLE_DELAY = 0.2      -- wait for the GUI to finish animating
+local RETRY_AFTER = 2         -- if the same offer is still up after this many seconds, try again
+local REMOTE_ARG = "name"     -- "name" or "index": what RespondToQuery expects. Flip if picks don't register.
+local DEBUG = false
+
+local function log(...)
+    if DEBUG then
+        print("[AUTO-PICKER]", ...)
+    end
+end
+
+--------------------------------------------------------------------
+-- PRIORITY LISTS
+--------------------------------------------------------------------
 local PRIORITY_BUFFS = {
     "Reinforcements",
     "SharpenedEdges",
@@ -28,6 +50,7 @@ local PRIORITY_DEBUFFS = {
 }
 
 local PRIORITY_MOBS = {
+    "EvilEye",
     "DemonPack",
     "ClipperBloom",
     "SporeStorm",
@@ -37,170 +60,217 @@ local PRIORITY_MOBS = {
     "HiveGrowth",
     "NightTerrors",
     "WildHunt",
-    "EvilEye",
 }
 
+--------------------------------------------------------------------
+-- SCORING
+--------------------------------------------------------------------
+local function normalize(name)
+    return (name:gsub(" ", ""):lower())
+end
+
 local function getScore(cardName, priorityList)
-    -- Remove spaces for comparison
-    local normalizedCard = cardName:gsub(" ", ""):lower()
-    
+    local normalizedCard = normalize(cardName)
     for rank, priorityName in ipairs(priorityList) do
-        local normalizedPriority = priorityName:gsub(" ", ""):lower()
-        if normalizedPriority == normalizedCard then
+        if normalize(priorityName) == normalizedCard then
             return rank
         end
     end
     return 999
 end
 
-function clickButton(ClickOnPart)
-    local vim = game:GetService("VirtualInputManager")
-    local inset1, inset2 = game:GetService("GuiService"):GetGuiInset()
-    local insetOffset = inset1 - inset2
-    local part = ClickOnPart
-    local topLeft = part.AbsolutePosition + insetOffset
-    local center = topLeft + (part.AbsoluteSize / 2)
-    local X = center.X + 15
-    local Y = center.Y
-    vim:SendMouseButtonEvent(X, Y, 0, true, game, 0)
-    task.wait(0.1)
-    vim:SendMouseButtonEvent(X, Y, 0, false, game, 0)
-    task.wait(1)
-    Notify("Print", "Clicked: " .. tostring(ClickOnPart))
+local function listContains(list, normalizedCard)
+    for _, name in ipairs(list) do
+        if normalize(name) == normalizedCard then
+            return true
+        end
+    end
+    return false
 end
 
 local function pickBestCard(cardNames)
     local bestIndex = 1
-    local bestScore = 9999
+    local bestScore = math.huge
 
     for index, cardName in ipairs(cardNames) do
-        local normalizedCard = cardName:gsub(" ", ""):lower()
+        local normalizedCard = normalize(cardName)
         local priorityList = PRIORITY_BUFFS
-        
-        -- Check if it's a mob/debuff
-        for _, mobName in ipairs(PRIORITY_MOBS) do
-            if mobName:lower() == normalizedCard then
-                priorityList = PRIORITY_MOBS
-                break
-            end
-        end
-        for _, debuffName in ipairs(PRIORITY_DEBUFFS) do
-            if debuffName:lower() == normalizedCard then
-                priorityList = PRIORITY_DEBUFFS
-                break
-            end
+
+        if listContains(PRIORITY_MOBS, normalizedCard) then
+            priorityList = PRIORITY_MOBS
+        elseif listContains(PRIORITY_DEBUFFS, normalizedCard) then
+            priorityList = PRIORITY_DEBUFFS
         end
 
         local score = getScore(cardName, priorityList)
-        --print("[DEBUG] Scoring", cardName, "as", normalizedCard, "= score", score)
+        log("Scoring", cardName, "=", score)
         if score < bestScore then
             bestScore = score
-            bestIndex = index  -- Store index instead of name
+            bestIndex = index
         end
     end
 
-    return bestIndex  -- Return the index
+    return bestIndex
 end
 
+--------------------------------------------------------------------
+-- CLICKING
+--------------------------------------------------------------------
+local function clickButton(guiObject)
+    local inset1, inset2 = GuiService:GetGuiInset()
+    local insetOffset = inset1 - inset2
+    local topLeft = guiObject.AbsolutePosition + insetOffset
+    local center = topLeft + (guiObject.AbsoluteSize / 2)
+    local X = center.X + 15
+    local Y = center.Y
+
+    VirtualInputManager:SendMouseButtonEvent(X, Y, 0, true, game, 0)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(X, Y, 0, false, game, 0)
+    task.wait(0.5)
+    log("Clicked:", guiObject:GetFullName())
+end
+
+local function fireRemote(cardName, cardIndex)
+    local remote = ReplicatedStorage.Modules.Remotes.RemoteEvent.RespondToQuery
+    local arg = (REMOTE_ARG == "index") and tostring(cardIndex) or tostring(cardName)
+    remote:FireServer("GauntletOffer", arg)
+end
+
+--------------------------------------------------------------------
+-- GUI HELPERS
+--------------------------------------------------------------------
+-- Returns the GauntletOffer object only if it exists AND is actually showing.
+local function getVisibleOffer()
+    local mainHud = PlayerGui:FindFirstChild("MainHud")
+    if not mainHud then return nil end
+
+    local offer = mainHud:FindFirstChild("GauntletOffer")
+    if not offer then return nil end
+
+    if offer:IsA("GuiObject") and not offer.Visible then return nil end
+    if offer:IsA("LayerCollector") and not offer.Enabled then return nil end
+    if mainHud:IsA("LayerCollector") and not mainHud.Enabled then return nil end
+
+    return offer
+end
+
+local function getListings(cardRow)
+    local listings = {}
+    for _, child in ipairs(cardRow:GetChildren()) do
+        if child.Name:match("^listing%d+$") then
+            table.insert(listings, child)
+        end
+    end
+    -- GetChildren order isn't guaranteed; sort by the number in the name
+    table.sort(listings, function(a, b)
+        return tonumber(a.Name:match("%d+")) < tonumber(b.Name:match("%d+"))
+    end)
+    return listings
+end
+
+local function getCardNames(listings)
+    local names = {}
+    for _, listing in ipairs(listings) do
+        local content = listing:FindFirstChild("Content")
+        local cardName = content and content:FindFirstChild("CardName")
+        if cardName and cardName:IsA("TextLabel") then
+            table.insert(names, cardName.Text)
+        else
+            -- keep indices aligned with listings even if one is missing
+            table.insert(names, "")
+        end
+    end
+    return names
+end
+
+--------------------------------------------------------------------
+-- PICK LOGIC
+--------------------------------------------------------------------
 local lastSelection = ""
+local lastPickTime = 0
 local debounce = false
 
--- Watch for GauntletOffer GUI appearing
+local function performPick(cardRow)
+    -- Re-read everything after the settle delay so we act on the current state
+    local listings = getListings(cardRow)
+    if #listings == 0 then return end
+
+    local cardNames = getCardNames(listings)
+    local anyName = false
+    for _, n in ipairs(cardNames) do
+        if n ~= "" then anyName = true break end
+    end
+    if not anyName then return end
+
+    local bestIndex = pickBestCard(cardNames)
+    local bestName = cardNames[bestIndex]
+    local listing = listings[bestIndex]
+    if not listing then
+        warn("[AUTO-PICKER] No listing at index", bestIndex)
+        return
+    end
+
+    lastSelection = bestName
+    lastPickTime = os.clock()
+    print("[CLICK] Picking card", bestIndex, ":", bestName)
+
+    -- Server remote
+    local okRemote, errRemote = pcall(fireRemote, bestName, bestIndex)
+    if not okRemote then
+        warn("[AUTO-PICKER] Remote failed:", errRemote)
+    end
+
+    -- GUI click fallbacks (each isolated so one failure can't stop the rest)
+    local button = listing:FindFirstChild("Button") or listing
+
+    if button:IsA("GuiButton") then
+        if firesignal then
+            pcall(function() firesignal(button.Activated) end)
+            pcall(function() firesignal(button.MouseButton1Click) end)
+        end
+    end
+
+    pcall(clickButton, button)
+end
+
 local function watchGauntletOffer()
     while true do
-        task.wait(0.1)
-        
+        task.wait(POLL_INTERVAL)
+
+        local offer = getVisibleOffer()
+
+        -- Offer gone: reset so the next offer is always treated fresh
+        if not offer then
+            lastSelection = ""
+            continue
+        end
+
         if debounce then continue end
-        
-        -- Check if GauntletOffer GUI exists
-        local mainHud = PlayerGui:FindFirstChild("MainHud")
-        if not mainHud then continue end
-        
-        local gauntletOffer = mainHud:FindFirstChild("GauntletOffer")
-        if not gauntletOffer then continue end
-        
-        local cardRow = gauntletOffer:FindFirstChild("CardRow")
+
+        local cardRow = offer:FindFirstChild("CardRow")
         if not cardRow then continue end
-        
-        -- Get all listing children (listing1, listing2, listing3, etc.)
-        local listings = {}
-        for _, child in ipairs(cardRow:GetChildren()) do
-            if child.Name:match("^listing%d+$") then
-                table.insert(listings, child)
-            end
-        end
-        
+
+        local listings = getListings(cardRow)
         if #listings == 0 then continue end
-        
-        -- Extract card names from each listing
-        local cardNames = {}
-        for _, listing in ipairs(listings) do
-            local content = listing:FindFirstChild("Content")
-            if content then
-                local cardName = content:FindFirstChild("CardName")
-                if cardName and cardName:IsA("TextLabel") then
-                    table.insert(cardNames, cardName.Text)
-                    --print("[DEBUG] Found card:", cardName.Text)
-                end
-            end
+
+        -- Same offer still on screen after a pick? Only retry after a timeout.
+        local names = getCardNames(listings)
+        local best = names[pickBestCard(names)]
+        if best ~= "" and best == lastSelection and (os.clock() - lastPickTime) < RETRY_AFTER then
+            continue
         end
-        
-        if #cardNames == 0 then continue end
-        
-        --print("[INFO] Cards available:", table.concat(cardNames, ", "))
-        
+
         debounce = true
         task.spawn(function()
-            task.wait(0.2) -- Give GUI time to settle
-            
-            local bestCardIndex = pickBestCard(cardNames)
-            local bestCardName = cardNames[bestCardIndex]
-            --print("[AUTO-PICKER] Best card:", bestCardName, "(index", bestCardIndex, ")")
-            
-            if bestCardName ~= lastSelection then
-                lastSelection = bestCardName
-                
-                -- Get listings in order
-                local listings = {}
-                for _, child in ipairs(cardRow:GetChildren()) do
-                    if child.Name:match("^listing%d+$") then
-                        table.insert(listings, child)
-                    end
-                end
-                
-                -- Click by index (no name matching needed)
-                if listings[bestCardIndex] then
-                    local listing = listings[bestCardIndex]
-                    local button = listing:FindFirstChild("Button") or listing
-                    
-                    print("[CLICK] Clicking card at index", bestCardIndex, ":", bestCardName)
-                    task.spawn(function()
-                        local chooseCard = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.RespondToQuery
-                        chooseCard:FireServer("GauntletOffer",tostring(bestCardName)) 
-                    end)
-                    local chooseCard = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.RespondToQuery
-                    chooseCard:FireServer("GauntletOffer",tostring(bestCardIndex)) 
+            task.wait(SETTLE_DELAY)
 
-                    if button:IsA("GuiButton") or button:IsA("TextButton") then
-                        firesignal(button.Activated)
-                        pcall(function()
-                            clickButton(button)
-                        end)
-                        pcall(function()
-                            button.MouseButton1Click:Fire()
-                        end)
-                    else
-                        pcall(function()
-                            listing.MouseButton1Click:Fire()
-                        end)
-                    end
-                    
-                    task.wait(0.5)
-                else
-                    print("[ERROR] Could not find listing at index", bestCardIndex)
-                end
+            -- pcall guarantees debounce is always released, even on error
+            local ok, err = pcall(performPick, cardRow)
+            if not ok then
+                warn("[AUTO-PICKER] Error:", err)
             end
-            
+
             task.wait(0.5)
             debounce = false
         end)
