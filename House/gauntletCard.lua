@@ -1,383 +1,291 @@
-local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GuiService = game:GetService("GuiService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- Don't hardcode your webhook here. Set it before running: getgenv().WEBHOOK_URL = "..."
-local webhookUrl = getgenv().WEBHOOK_URL or "PASTE_NEW_WEBHOOK_URL_HERE"
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- Set getgenv().AUTO_SEND = false to send once immediately instead of after every round
-local AUTO_SEND = getgenv().AUTO_SEND ~= false
+--------------------------------------------------------------------
+-- CONFIG
+--------------------------------------------------------------------
+local POLL_INTERVAL = 0.1     -- how often to check for an offer
+local SETTLE_DELAY = 0.2      -- wait for the GUI to finish animating
+local RETRY_AFTER = 2         -- if the same offer is still up after this many seconds, try again
+local REMOTE_ARG = "name"     -- "name" or "index": what RespondToQuery expects. Flip if picks don't register.
+local DEBUG = false
 
-local inventoryGetters = require(ReplicatedStorage.Modules.Inventory.inventory_getters)
-local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
-local FactionsModule = require(ReplicatedStorage.Modules.Factions)
-local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
-local round_atom = require(ReplicatedStorage.Modules.Round.round_atom)
-
-local player = Players.LocalPlayer
-
-----------------------------------------------------------------------
--- Helpers
-----------------------------------------------------------------------
-local function createProgressBar(current, max, length)
-    length = length or 10
-    current = tonumber(current) or 0
-    max = tonumber(max) or 1
-    if max <= 0 then max = 1 end
-
-    local percentage = math.clamp(current / max, 0, 1)
-    local filledCount = math.floor(percentage * length)
-    local emptyCount = length - filledCount
-
-    local bar = string.rep("█", filledCount) .. string.rep("░", emptyCount)
-    local percentText = math.floor(percentage * 100) .. "%"
-
-    return string.format("%s `[%d/%d]` (%s)", bar, current, max, percentText)
-end
-
-local function readRoundState()
-    local ok, state = pcall(round_atom) -- calling an atom with no args returns its current value
-    if ok and type(state) == "table" then
-        return state
-    end
-    return nil
-end
-
-local function formatSeconds(sec)
-    sec = math.max(0, math.floor(tonumber(sec) or 0))
-    local h = math.floor(sec / 3600)
-    local m = math.floor((sec % 3600) / 60)
-    local s = sec % 60
-    if h > 0 then
-        return string.format("%dh %02dm %02ds", h, m, s)
-    end
-    return string.format("%dm %02ds", m, s)
-end
-
-----------------------------------------------------------------------
--- Round tracking
--- round_atom has no end timestamp, so we record the moment game_over flips to true.
--- We also record our own start time as a fallback in case startedAt isn't usable.
-----------------------------------------------------------------------
-local tracker = { start = nil, endT = nil, startingInventory = nil }
-
-local function updateTracker(state)
-    if not state then return end
-    local now = workspace:GetServerTimeNow()
-
-    if state.game_over then
-        if not tracker.endT then
-            tracker.endT = now
-        end
-    else
-        -- A new round is underway (or none yet): clear last round's end marker
-        tracker.endT = nil
-        if (state.active or state.started) then
-            if not tracker.start then
-                tracker.start = now
-                -- Capture starting inventory at the beginning of the round
-                local ok, inv = pcall(function()
-                    return inventoryGetters.getInventory(player)
-                end)
-                if ok and inv then
-                    tracker.startingInventory = inv
-                end
-            end
-        else
-            tracker.start = nil
-            tracker.startingInventory = nil
-        end
+local function log(...)
+    if DEBUG then
+        print("[AUTO-PICKER]", ...)
     end
 end
 
-local function getResultText(state)
-    if not state then return "Unknown" end
-    if not state.game_over then
-        return "⏳ In Progress"
-    end
+--------------------------------------------------------------------
+-- PRIORITY LISTS
+-- Names are matched against the card's displayed name (spaces,
+-- apostrophes and other non-letters are ignored, case-insensitive).
+--------------------------------------------------------------------
+local PRIORITY_BUFFS = {
+    "Reinforcements",   -- Legendary (wave 100+): +1 unit placement, any unit.
+    "ParanormalReach",  -- Epic: Paranormal towers gain 10% range.
+    "SharpenedEdges",   -- Rare: All towers deal 10/15/20/30% more damage (tiers).
+    "Overclock",        -- Rare: All towers attack 10/15/20% faster (tiers).
+    "HolyFervor",       -- Epic: Holy towers deal 15% more damage.
+    "Requisition",      -- Epic: Military towers deal 15% more damage.
+    "GraveRite",        -- Epic: Undead towers deal 15% more damage.
+    "DemonPact",        -- Epic: Demon towers deal 15% more damage.
+    "FortifytheGate",   -- Epic ("Fortify the Gate"): +25/35/50/75/100 base health (tiers).
+}
 
-    local won = (tonumber(state.health) or 0) > 0
-    local label = won and "🏆 Victory" or "💀 Defeat"
-    local details = string.format(
-        "Wave %s/%s • %s",
-        tostring(state.wave or "?"),
-        tostring(state.max_waves or "?"),
-        tostring(state.difficulty or "?")
-    )
-    return label .. " (" .. details .. ")"
+local PRIORITY_DEBUFFS = {
+    "OpenTheSecondGate", -- Rare: Second track opens early (gives way at wave 9 regardless).
+    "OpenTheThirdGate",  -- Epic: Third track opens early (gives way at wave 24 regardless). Requires second gate open.
+    "OpenTheFourthGate", -- Legendary: Fourth track opens early (gives way at wave 45 regardless). Requires third gate open.
+    "DemonWard",         -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Demon towers. Forever.
+    "UndeadWard",        -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Undead towers. Forever.
+    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
+    "ParanormalWard",    -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Paranormal towers. Forever.
+    "HolyWard",          -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Holy towers. Forever.
+    "MilitaryWard",      -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Military towers. Forever.
+    "ThickHide",         -- Common: Enemies gain 10% health (waves up to 75), or 5% health (wave 76+). Repeatable.
+}
+
+local PRIORITY_MOBS = {
+    "EvilEye",          -- Epic: A Gazer joins every third wave. Its eye stays shut... for now.
+    "NightTerrors",     -- Epic: A Bat joins every third wave. It sleeps... for now.
+    "PetrifyingGaze",   -- Epic (wave 75+, needs Evil Eye): Gazers have a 25/50/75/100% chance to stun towers.
+    "PrimalCharge",     -- Epic (wave 90+, needs Wild Hunt): The Deer has a 25/50/75/100% chance to charge.
+    "SleeplessEye",     -- Rare (waves 55-120, needs Evil Eye): A Gazer every 2 waves, then every single wave.
+    "QuickenedHunt",    -- Rare (waves 70-120, needs Wild Hunt): The Deer every 2 waves, then every single wave.
+    "RestlessRoost",    -- Rare (waves 40-120, needs Night Terrors): A Bat every 2 waves, then every single wave.
+    "SnatchingScreech", -- Epic (wave 60+, needs Night Terrors): Bats have a 25/50/75/100% chance to snatch towers.
+    "DemonPack",        -- Rare (max wave 25): 3 more Demon Minions every wave.
+    "ClipperBloom",     -- Common (max wave 25): 4 more Clippers every wave.
+    "SporeStorm",       -- Common (max wave 25): 6 more Spores every wave.
+    "GargoyleRoost",    -- Rare (waves 22-50): 3 more Gargoyle Minions every wave.
+    "CrimsonBloom",     -- Epic (waves 22-50): 2 more Red Spores every wave.
+    "ChompersToll",     -- Epic ("Chomper's Toll", waves 47-75): Two Chompers join every wave.
+    "WildHunt",         -- Epic: The Deer joins every third wave. It only watches... for now.
+    "HiveGrowth",       -- Legendary (waves 47-75): 2 more Bees every wave. Slow, and very hard to put down.
+}
+
+--------------------------------------------------------------------
+-- SCORING
+--------------------------------------------------------------------
+-- Lowercase and strip everything that isn't a letter, so
+-- "Chomper's Toll" and "ChompersToll" both become "chomperstoll".
+local function normalize(name)
+    return (name:lower():gsub("[^%a]", ""))
 end
 
-local function getRoundTimeText(state, info)
-    if not state then return "Unknown" end
-    info = info or tracker
-    local endT = info.endT or workspace:GetServerTimeNow()
-
-    -- Prefer the game's own startedAt
-    local s = state.startedAt
-    if type(s) == "number" and s > 0 then
-        local diff = endT - s
-        if diff >= 0 and diff < 86400 then
-            return formatSeconds(diff)
+local function getScore(cardName, priorityList)
+    local normalizedCard = normalize(cardName)
+    for rank, priorityName in ipairs(priorityList) do
+        if normalize(priorityName) == normalizedCard then
+            return rank
         end
     end
-
-    -- Fall back to when this script first saw the round go active
-    if info.start then
-        return formatSeconds(endT - info.start)
-    end
-
-    return "Unknown"
+    return 999
 end
 
--- Compares starting and ending inventory to show only items that changed
-local function getDroppedItemsText(startingInventory, endInventory)
-    if not startingInventory or not endInventory then
-        return "None found"
+local function listContains(list, normalizedCard)
+    for _, name in ipairs(list) do
+        if normalize(name) == normalizedCard then
+            return true
+        end
     end
+    return false
+end
 
-    local changed = {}
-    local order = {}
+local function pickBestCard(cardNames)
+    local bestIndex = 1
+    local bestScore = math.huge
 
-    -- Check for new items or increased amounts
-    for itemId, endData in pairs(endInventory) do
-        local endAmount = endData.amount or 1
-        local startAmount = 0
-        if startingInventory[itemId] then
-            startAmount = startingInventory[itemId].amount or 1
+    for index, cardName in ipairs(cardNames) do
+        local normalizedCard = normalize(cardName)
+        local priorityList = PRIORITY_BUFFS
+
+        if listContains(PRIORITY_MOBS, normalizedCard) then
+            priorityList = PRIORITY_MOBS
+        elseif listContains(PRIORITY_DEBUFFS, normalizedCard) then
+            priorityList = PRIORITY_DEBUFFS
         end
 
-        local difference = endAmount - startAmount
-        if difference > 0 then
-            changed[itemId] = difference
-            table.insert(order, itemId)
+        local score = getScore(cardName, priorityList)
+        log("Scoring", cardName, "=", score)
+        if score < bestScore then
+            bestScore = score
+            bestIndex = index
         end
     end
 
-    if #order == 0 then
-        return "None found"
-    end
-
-    local lines = {}
-    for _, itemId in ipairs(order) do
-        table.insert(lines, string.format("`%s x%d`", itemId, changed[itemId]))
-    end
-
-    local text = table.concat(lines, "\n")
-    if #text > 1000 then -- Discord field limit is 1024
-        text = text:sub(1, 997) .. "..."
-    end
-    return text
+    return bestIndex
 end
 
-----------------------------------------------------------------------
--- Webhook
-----------------------------------------------------------------------
-local function sendWebhook(snapshot, info)
-    local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, startingInventory, endingInventory = pcall(function()
-        local mainXp = XpSystem.getXp("Main", player) or 0
-        local mLevel = XpSystem.xpToLevel("Main", mainXp)
-        local mBaseXp = XpSystem.levelToXp(mLevel)
-        local mNextXp = math.max(1, XpSystem.levelToXp(mLevel + 1) - mBaseXp)
-        local mainCurrentXp = mainXp - mBaseXp
-        local mExpBar = createProgressBar(mainCurrentXp, mNextXp, 10)
+--------------------------------------------------------------------
+-- CLICKING
+--------------------------------------------------------------------
+local function clickButton(guiObject)
+    local inset1, inset2 = GuiService:GetGuiInset()
+    local insetOffset = inset1 - inset2
+    local topLeft = guiObject.AbsolutePosition + insetOffset
+    local center = topLeft + (guiObject.AbsoluteSize / 2)
+    local X = center.X + 15
+    local Y = center.Y
 
-        local currentFactionKey = "Omni"
-        local successFaction, resFaction = pcall(function()
-            return FactionsModule.getCurrentFaction(player)
-        end)
-        if successFaction and resFaction then
-            currentFactionKey = resFaction
+    VirtualInputManager:SendMouseButtonEvent(X, Y, 0, true, game, 0)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(X, Y, 0, false, game, 0)
+    task.wait(0.5)
+    log("Clicked:", guiObject:GetFullName())
+end
+
+local function fireRemote(cardName, cardIndex)
+    local remote = ReplicatedStorage.Modules.Remotes.RemoteEvent.RespondToQuery
+    local arg = (REMOTE_ARG == "index") and tostring(cardIndex) or tostring(cardName)
+    remote:FireServer("GauntletOffer", arg)
+end
+
+--------------------------------------------------------------------
+-- GUI HELPERS
+--------------------------------------------------------------------
+-- Returns the GauntletOffer object only if it exists AND is actually showing.
+local function getVisibleOffer()
+    local mainHud = PlayerGui:FindFirstChild("MainHud")
+    if not mainHud then return nil end
+
+    local offer = mainHud:FindFirstChild("GauntletOffer")
+    if not offer then return nil end
+
+    if offer:IsA("GuiObject") and not offer.Visible then return nil end
+    if offer:IsA("LayerCollector") and not offer.Enabled then return nil end
+    if mainHud:IsA("LayerCollector") and not mainHud.Enabled then return nil end
+
+    return offer
+end
+
+local function getListings(cardRow)
+    local listings = {}
+    for _, child in ipairs(cardRow:GetChildren()) do
+        if child.Name:match("^listing%d+$") then
+            table.insert(listings, child)
         end
-
-        local factionData = FactionsDatabase[currentFactionKey]
-        local fName = factionData and factionData.name or currentFactionKey
-
-        local fXp = XpSystem.getXp(currentFactionKey, player) or 0
-        local fLevel = XpSystem.xpToLevel(currentFactionKey, fXp)
-        local fBaseXp = XpSystem.levelToXp(fLevel)
-        local fNextXp = math.max(1, XpSystem.levelToXp(fLevel + 1) - fBaseXp)
-        local factionCurrentXp = fXp - fBaseXp
-        local fExpBar = createProgressBar(factionCurrentXp, fNextXp, 10)
-
-        local startInv = info.startingInventory or tracker.startingInventory
-        local endInv = inventoryGetters.getInventory(player)
-
-        return mLevel, mExpBar, currentFactionKey, fName, fLevel, fExpBar, startInv, endInv
+    end
+    -- GetChildren order isn't guaranteed; sort by the number in the name
+    table.sort(listings, function(a, b)
+        return tonumber(a.Name:match("%d+")) < tonumber(b.Name:match("%d+"))
     end)
+    return listings
+end
 
-    if not success then
-        warn("Failed to fetch player stats or inventory data.")
+local function getCardNames(listings)
+    local names = {}
+    for _, listing in ipairs(listings) do
+        local content = listing:FindFirstChild("Content")
+        local cardName = content and content:FindFirstChild("CardName")
+        if cardName and cardName:IsA("TextLabel") then
+            table.insert(names, cardName.Text)
+        else
+            -- keep indices aligned with listings even if one is missing
+            table.insert(names, "")
+        end
+    end
+    return names
+end
+
+--------------------------------------------------------------------
+-- PICK LOGIC
+--------------------------------------------------------------------
+local lastSelection = ""
+local lastPickTime = 0
+local debounce = false
+
+local function performPick(cardRow)
+    -- Re-read everything after the settle delay so we act on the current state
+    local listings = getListings(cardRow)
+    if #listings == 0 then return end
+
+    local cardNames = getCardNames(listings)
+    local anyName = false
+    for _, n in ipairs(cardNames) do
+        if n ~= "" then anyName = true break end
+    end
+    if not anyName then return end
+
+    local bestIndex = pickBestCard(cardNames)
+    local bestName = cardNames[bestIndex]
+    local listing = listings[bestIndex]
+    if not listing then
+        warn("[AUTO-PICKER] No listing at index", bestIndex)
         return
     end
 
-    local targetItems = { "Coins", "VoodooToken", "GardenCoins", "RaidTokens", "KingsToken" }
+    lastSelection = bestName
+    lastPickTime = os.clock()
+    --print("[CLICK] Picking card", bestIndex, ":", bestName)
 
-    local foundItems = {}
-    if endingInventory then
-        for _, itemId in ipairs(targetItems) do
-            if endingInventory[itemId] then
-                local amount = endingInventory[itemId].amount or 1
-                table.insert(foundItems, string.format("`%s:%d`", itemId, amount))
-            end
+    -- Server remote
+    local okRemote, errRemote = pcall(fireRemote, bestName, bestIndex)
+    if not okRemote then
+        warn("[AUTO-PICKER] Remote failed:", errRemote)
+    end
+
+    -- GUI click fallbacks (each isolated so one failure can't stop the rest)
+    local button = listing:FindFirstChild("Button") or listing
+
+    if button:IsA("GuiButton") then
+        if firesignal then
+            pcall(function() firesignal(button.Activated) end)
+            pcall(function() firesignal(button.MouseButton1Click) end)
         end
     end
-    local inventoryText = #foundItems > 0 and table.concat(foundItems, ", ") or "None found"
 
-    -- Get dropped items by comparing inventories
-    local droppedItemsText = getDroppedItemsText(startingInventory, endingInventory)
+    pcall(clickButton, button)
+end
 
-    -- Round info
-    local roundState = snapshot
-    if not roundState then
-        roundState = readRoundState()
-        updateTracker(roundState)
-    end
+local function watchGauntletOffer()
+    while true do
+        task.wait(POLL_INTERVAL)
 
-    local data = {
-        ["content"] = "",
-        ["embeds"] = {{
-            ["title"] = "📊 Player Status & Inventory",
-            ["color"] = 3447003,
-            ["fields"] = {
-                { ["name"] = "Display Name", ["value"] = "||" .. player.DisplayName .. "||", ["inline"] = true },
-                { ["name"] = "Username", ["value"] = "||" .. player.Name .. "||", ["inline"] = true },
-                {
-                    ["name"] = "Main Level (" .. tostring(mainLevel or 1) .. ")",
-                    ["value"] = tostring(mainExpBarText),
-                    ["inline"] = false
-                },
-                {
-                    ["name"] = "Faction (" .. tostring(factionName) .. ") Level (" .. tostring(factionLevel or 1) .. ")",
-                    ["value"] = tostring(factionExpBarText),
-                    ["inline"] = false
-                },
-                { ["name"] = "Target Inventory Items", ["value"] = inventoryText, ["inline"] = false },
+        local offer = getVisibleOffer()
 
-                -- Round section
-                { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
-                { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
-                { ["name"] = "Dropped / Rewarded Items", ["value"] = droppedItemsText, ["inline"] = false },
-            }
-        }}
-    }
+        -- Offer gone: reset so the next offer is always treated fresh
+        if not offer then
+            lastSelection = ""
+            continue
+        end
 
-    local jsonBody = HttpService:JSONEncode(data)
-    local requestMethod = (syn and syn.request) or (http and http.request) or http_request
+        if debounce then continue end
 
-    if requestMethod then
-        requestMethod({
-            Url = webhookUrl,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = jsonBody
-        })
-    else
-        pcall(function()
-            HttpService:PostAsync(webhookUrl, jsonBody, Enum.HttpContentType.ApplicationJson)
+        local cardRow = offer:FindFirstChild("CardRow")
+        if not cardRow then continue end
+
+        local listings = getListings(cardRow)
+        if #listings == 0 then continue end
+
+        -- Same offer still on screen after a pick? Only retry after a timeout.
+        local names = getCardNames(listings)
+        local best = names[pickBestCard(names)]
+        if best ~= "" and best == lastSelection and (os.clock() - lastPickTime) < RETRY_AFTER then
+            continue
+        end
+
+        debounce = true
+        task.spawn(function()
+            task.wait(SETTLE_DELAY)
+
+            -- pcall guarantees debounce is always released, even on error
+            local ok, err = pcall(performPick, cardRow)
+            if not ok then
+                warn("[AUTO-PICKER] Error:", err)
+            end
+
+            task.wait(0.5)
+            debounce = false
         end)
     end
 end
 
-----------------------------------------------------------------------
--- Trigger (multi-round, duplicate-proof)
---  * Singleton: re-running this script stops the previous loop instead of stacking a second one.
---  * Round ID: each round is sent once, keyed by startedAt/startAt.
---  * Re-arm debounce: game_over must stay false for REARM_AFTER seconds before the same ID can send again,
---    so a flicker at the end of a round can't trigger a second send.
---  * MIN_GAP: hard minimum time between sends (shared across copies via getgenv).
-----------------------------------------------------------------------
-local POLL_RATE = 0.25
-local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
-local REARM_AFTER = 3 -- seconds game_over must be false before the same round ID can send again
-local MIN_GAP = 10 -- minimum seconds between any two webhook sends
-
-local runToken = {}
-getgenv().__ROUND_WEBHOOK_RUN = runToken -- any older loop sees a different token and exits
-
-local function roundId(state)
-    -- startedAt changes every round; startAt is the fallback
-    local s = tonumber(state.startedAt) or 0
-    if s > 0 then return "s" .. s end
-    return "a" .. tostring(state.startAt)
-end
-
-local function finishRound(snapshot, info, id)
-    task.wait(REWARD_DELAY)
-
-    -- If this round is still the one on screen, re-read for the most complete rewards list.
-    -- If the next round already started, keep the snapshot so we don't report the wrong round.
-    local fresh = readRoundState()
-    if fresh and fresh.game_over and roundId(fresh) == id then
-        snapshot = fresh
-    end
-
-    -- Include starting inventory in the info table
-    info.startingInventory = tracker.startingInventory
-
-    local ok, err = pcall(sendWebhook, snapshot, info)
-    if not ok then
-        warn("[webhook] send failed:", err)
-    end
-end
-
-if AUTO_SEND then
-    task.spawn(function()
-        local lastSentId = nil
-        local currentId = nil
-        local falseSince = nil
-
-        -- Don't re-send a round that had already ended before launch
-        local initial = readRoundState()
-        if initial then
-            currentId = roundId(initial)
-            updateTracker(initial)
-            if initial.game_over then
-                lastSentId = currentId
-            end
-        end
-
-        while task.wait(POLL_RATE) do
-            if getgenv().__ROUND_WEBHOOK_RUN ~= runToken then
-                break -- a newer copy of this script took over
-            end
-
-            local state = readRoundState()
-            if state then
-                local id = roundId(state)
-
-                -- New round detected: reset timing so it doesn't carry over
-                if id ~= currentId then
-                    currentId = id
-                    tracker.start = nil
-                    tracker.endT = nil
-                end
-
-                updateTracker(state)
-
-                if state.game_over then
-                    falseSince = nil
-
-                    if lastSentId ~= id then
-                        lastSentId = id -- mark first so this round can never send twice
-
-                        local now = os.clock()
-                        local last = getgenv().__ROUND_WEBHOOK_LAST or -math.huge
-                        if now - last >= MIN_GAP then
-                            getgenv().__ROUND_WEBHOOK_LAST = now
-                            local info = { start = tracker.start, endT = tracker.endT }
-                            task.spawn(finishRound, state, info, id)
-                        end
-                    end
-                else
-                    -- Round running: only re-arm after game_over has been false for a stable stretch
-                    falseSince = falseSince or os.clock()
-                    if os.clock() - falseSince >= REARM_AFTER then
-                        lastSentId = nil
-                    end
-                end
-            end
-        end
-    end)
-else
-    sendWebhook()
-end
+print("[Executor] Card Priority Picker Loaded (GUI Mode)")
+task.spawn(watchGauntletOffer)
