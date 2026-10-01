@@ -8,6 +8,15 @@ local webhookUrl = getgenv().WEBHOOK_URL or "PASTE_NEW_WEBHOOK_URL_HERE"
 -- Set getgenv().AUTO_SEND = false to send once immediately instead of after every round
 local AUTO_SEND = getgenv().AUTO_SEND ~= false
 
+-- Set getgenv().DEBUG = true to enable debug logging
+local DEBUG = getgenv().DEBUG or false
+
+local function debug(...)
+    if DEBUG then
+        print("[WEBHOOK DEBUG]", ...)
+    end
+end
+
 local inventoryGetters = require(ReplicatedStorage.Modules.Inventory.inventory_getters)
 local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
 local FactionsModule = require(ReplicatedStorage.Modules.Factions)
@@ -170,45 +179,86 @@ local function getDroppedItemsText(startingInventory, endInventory)
 end
 
 -- Extracts crate rewards from round state
--- Crate structure: state.crate[playerName][number] = { itemId, max, min }
+-- Crate rewards are stored in rewards["#" .. playerName] as entries with a contents field
+-- The highest numeric index within contents = the number of items in that crate
+-- Shows if TheWatcherUrn is found inside the crate
 local function getCrateRewardsText(state)
-    if not state or type(state.crate) ~= "table" then
+    if not state or type(state.rewards) ~= "table" then
         return "None found"
     end
 
-    -- Get the player's crate data
-    local playerCrates = state.crate[player.Name]
-    if not playerCrates or type(playerCrates) ~= "table" then
+    -- Get the player's rewards data (keyed with "#" prefix)
+    local playerRewards = state.rewards["#" .. player.Name]
+    if not playerRewards or type(playerRewards) ~= "table" then
         return "None found"
     end
 
-    -- Find the highest numbered key to count crates earned
-    local maxCrateCount = 0
-    for key in pairs(playerCrates) do
-        local num = tonumber(key)
-        if num and num > maxCrateCount then
-            maxCrateCount = num
+    -- Item to look for inside crates
+    local SPECIAL_ITEM = "TheWatcherUrn"
+
+    -- Find crate rewards (entries with a contents field) and count items
+    local crateMap = {}
+    local crateOrder = {}
+    
+    for _, reward in ipairs(playerRewards) do
+        if type(reward) == "table" and reward.contents then
+            local crateId = reward.itemId
+            if crateId and type(reward.contents) == "table" then
+                -- Find the highest numeric index in contents
+                local maxIndex = 0
+                local hasSpecialItem = false
+                
+                for key, item in pairs(reward.contents) do
+                    local num = tonumber(key)
+                    if num and num > maxIndex then
+                        maxIndex = num
+                    end
+                    
+                    -- Check if this item is the special item we're looking for
+                    if type(item) == "table" and item.itemId == SPECIAL_ITEM then
+                        hasSpecialItem = true
+                    end
+                end
+                
+                if maxIndex > 0 then
+                    if not crateMap[crateId] then
+                        crateMap[crateId] = {count = 0, hasSpecial = false}
+                        table.insert(crateOrder, crateId)
+                    end
+                    crateMap[crateId].count = crateMap[crateId].count + maxIndex
+                    if hasSpecialItem then
+                        crateMap[crateId].hasSpecial = true
+                    end
+                end
+            end
         end
     end
 
-    if maxCrateCount == 0 then
+    if #crateOrder == 0 then
         return "None found"
     end
 
-    -- Get the crate name from the waves configuration
-    local crateName = "Endless Crate" -- Default fallback
-    local ok, crateConfig = pcall(function()
-        return state.waves.settings.endless.crate
-    end)
-    
-    if ok and crateConfig and crateConfig.item then
-        local itemOk, itemResult = pcall(Items.get, crateConfig.item)
-        if itemOk and itemResult and itemResult.name then
+    -- Format the output with crate display names
+    local lines = {}
+    for _, crateId in ipairs(crateOrder) do
+        local crateName = crateId
+        local ok, itemResult = pcall(Items.get, crateId)
+        if ok and itemResult and itemResult.name then
             crateName = itemResult.name
         end
+        
+        local itemCount = crateMap[crateId].count
+        if crateMap[crateId].hasSpecial then
+            table.insert(lines, string.format("`%s: %d (%s)`", crateName, itemCount, SPECIAL_ITEM))
+        else
+            table.insert(lines, string.format("`%s: %d`", crateName, itemCount))
+        end
     end
 
-    local text = string.format("`%s: %d`", crateName, maxCrateCount)
+    local text = table.concat(lines, "\n")
+    if #text > 1000 then -- Discord field limit is 1024
+        text = text:sub(1, 997) .. "..."
+    end
     return text
 end
 
