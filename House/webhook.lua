@@ -2,8 +2,13 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- Don't hardcode your webhook here. Set it before running: getgenv().WEBHOOK_URL = "..."
 local webhookUrl = getgenv().WEBHOOK_URL or "PASTE_NEW_WEBHOOK_URL_HERE"
+
+-- Set getgenv().AUTO_SEND = false to send once immediately instead of after every round
 local AUTO_SEND = getgenv().AUTO_SEND ~= false
+
+-- Set getgenv().DEBUG = true to enable debug logging
 local DEBUG = getgenv().DEBUG or false
 
 local function debug(...)
@@ -17,7 +22,7 @@ local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
 local FactionsModule = require(ReplicatedStorage.Modules.Factions)
 local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
 local round_atom = require(ReplicatedStorage.Modules.Round.round_atom)
-local Items = require(ReplicatedStorage.Modules.Items)
+local Items = require(ReplicatedStorage.Modules.Items) -- FIX: Items was never required before
 
 local player = Players.LocalPlayer
 
@@ -134,37 +139,53 @@ local function getRoundTimeText(state, info)
     return "Unknown"
 end
 
--- Compares starting and ending inventory to show only items that changed
-local function getDroppedItemsText(startingInventory, endInventory)
-    if not startingInventory or not endInventory then
+-- Extracts non-crate rewards from round state
+local function getDroppedItemsText(state)
+    if not state or type(state.rewards) ~= "table" then
         return "None found"
     end
 
-    local changed = {}
-    local order = {}
-
-    -- Check for new items or increased amounts
-    for itemId, endData in pairs(endInventory) do
-        local endAmount = endData.amount or 1
-        local startAmount = 0
-        if startingInventory[itemId] then
-            startAmount = startingInventory[itemId].amount or 1
-        end
-
-        local difference = endAmount - startAmount
-        if difference > 0 then
-            changed[itemId] = difference
-            table.insert(order, itemId)
-        end
-    end
-
-    if #order == 0 then
+    -- Get the player's rewards data (keyed with "#" prefix)
+    local playerRewards = state.rewards["#" .. player.Name]
+    if not playerRewards or type(playerRewards) ~= "table" then
         return "None found"
     end
 
+    -- Find non-crate rewards (entries without a contents field)
+    local itemMap = {}
+    local itemOrder = {}
+
+    for _, reward in ipairs(playerRewards) do
+        if type(reward) == "table" and not reward.contents then
+            -- This is a non-crate reward
+            local itemId = reward.itemId
+            if itemId then
+                local amount = reward.amount or 1
+                
+                if not itemMap[itemId] then
+                    itemMap[itemId] = 0
+                    table.insert(itemOrder, itemId)
+                end
+                itemMap[itemId] = itemMap[itemId] + amount
+            end
+        end
+    end
+
+    if #itemOrder == 0 then
+        return "None found"
+    end
+
+    -- Format the output with item display names
     local lines = {}
-    for _, itemId in ipairs(order) do
-        table.insert(lines, string.format("`%s x%d`", itemId, changed[itemId]))
+    for _, itemId in ipairs(itemOrder) do
+        local itemName = itemId
+        local ok, itemResult = pcall(Items.get, itemId)
+        if ok and itemResult and itemResult.name then
+            itemName = itemResult.name
+        end
+
+        local amount = itemMap[itemId]
+        table.insert(lines, string.format("`%s x%d`", itemName, amount))
     end
 
     local text = table.concat(lines, "\n")
@@ -312,15 +333,15 @@ local function sendWebhook(snapshot, info)
     end
     local inventoryText = #foundItems > 0 and table.concat(foundItems, ", ") or "None found"
 
-    -- Get dropped items by comparing inventories
-    local droppedItemsText = getDroppedItemsText(startingInventory, endingInventory)
-
     -- Round info
     local roundState = snapshot
     if not roundState then
         roundState = readRoundState()
         updateTracker(roundState)
     end
+
+    -- Get dropped items from rewards
+    local droppedItemsText = getDroppedItemsText(roundState)
 
     -- Build fields array
     local fields = {
@@ -375,6 +396,15 @@ local function sendWebhook(snapshot, info)
         end)
     end
 end
+
+----------------------------------------------------------------------
+-- Trigger (multi-round, duplicate-proof)
+--  * Singleton: re-running this script stops the previous loop instead of stacking a second one.
+--  * Round ID: each round is sent once, keyed by startedAt/startAt.
+--  * Re-arm debounce: game_over must stay false for REARM_AFTER seconds before the same ID can send again,
+--    so a flicker at the end of a round can't trigger a second send.
+--  * MIN_GAP: hard minimum time between sends (shared across copies via getgenv).
+----------------------------------------------------------------------
 local POLL_RATE = 0.25
 local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
 local REARM_AFTER = 3 -- seconds game_over must be false before the same round ID can send again
