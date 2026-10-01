@@ -169,6 +169,51 @@ local function getDroppedItemsText(startingInventory, endInventory)
     return text
 end
 
+-- Extracts crate rewards from round state
+-- Crate structure: state.crate[crateName][number] = { itemId, max, min }
+local function getCrateRewardsText(state)
+    if not state or type(state.crate) ~= "table" then
+        return "None found"
+    end
+
+    local crateData = {}
+    
+    -- Iterate through each crate type (e.g., "k_quc")
+    for crateName, crateContents in pairs(state.crate) do
+        if type(crateContents) == "table" then
+            -- Find the highest numbered key to count crates
+            local maxCrateCount = 0
+            for key in pairs(crateContents) do
+                local num = tonumber(key)
+                if num and num > maxCrateCount then
+                    maxCrateCount = num
+                end
+            end
+            
+            if maxCrateCount > 0 then
+                -- Try to get the crate's display name from Items module
+                local displayName = crateName
+                local ok, result = pcall(Items.get, crateName)
+                if ok and result and result.name then
+                    displayName = result.name
+                end
+                
+                table.insert(crateData, string.format("`%s: %d`", displayName, maxCrateCount))
+            end
+        end
+    end
+
+    if #crateData == 0 then
+        return "None found"
+    end
+
+    local text = table.concat(crateData, "\n")
+    if #text > 1000 then -- Discord field limit is 1024
+        text = text:sub(1, 997) .. "..."
+    end
+    return text
+end
+
 ----------------------------------------------------------------------
 -- Webhook
 ----------------------------------------------------------------------
@@ -233,31 +278,40 @@ local function sendWebhook(snapshot, info)
         updateTracker(roundState)
     end
 
+    -- Build fields array
+    local fields = {
+        { ["name"] = "Display Name", ["value"] = "||" .. player.DisplayName .. "||", ["inline"] = true },
+        { ["name"] = "Username", ["value"] = "||" .. player.Name .. "||", ["inline"] = true },
+        {
+            ["name"] = "Main Level (" .. tostring(mainLevel or 1) .. ")",
+            ["value"] = tostring(mainExpBarText),
+            ["inline"] = false
+        },
+        {
+            ["name"] = "Faction (" .. tostring(factionName) .. ") Level (" .. tostring(factionLevel or 1) .. ")",
+            ["value"] = tostring(factionExpBarText),
+            ["inline"] = false
+        },
+        { ["name"] = "Target Inventory Items", ["value"] = inventoryText, ["inline"] = false },
+
+        -- Round section
+        { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
+        { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
+        { ["name"] = "Dropped / Rewarded Items", ["value"] = droppedItemsText, ["inline"] = false },
+    }
+
+    -- Add crate rewards section if crates exist
+    local crateRewardsText = getCrateRewardsText(roundState)
+    if crateRewardsText ~= "None found" then
+        table.insert(fields, { ["name"] = "Crate Rewards", ["value"] = crateRewardsText, ["inline"] = false })
+    end
+
     local data = {
         ["content"] = "",
         ["embeds"] = {{
             ["title"] = "📊 Player Status & Inventory",
             ["color"] = 3447003,
-            ["fields"] = {
-                { ["name"] = "Display Name", ["value"] = "||" .. player.DisplayName .. "||", ["inline"] = true },
-                { ["name"] = "Username", ["value"] = "||" .. player.Name .. "||", ["inline"] = true },
-                {
-                    ["name"] = "Main Level (" .. tostring(mainLevel or 1) .. ")",
-                    ["value"] = tostring(mainExpBarText),
-                    ["inline"] = false
-                },
-                {
-                    ["name"] = "Faction (" .. tostring(factionName) .. ") Level (" .. tostring(factionLevel or 1) .. ")",
-                    ["value"] = tostring(factionExpBarText),
-                    ["inline"] = false
-                },
-                { ["name"] = "Target Inventory Items", ["value"] = inventoryText, ["inline"] = false },
-
-                -- Round section
-                { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
-                { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
-                { ["name"] = "Dropped / Rewarded Items", ["value"] = droppedItemsText, ["inline"] = false },
-            }
+            ["fields"] = fields
         }}
     }
 
