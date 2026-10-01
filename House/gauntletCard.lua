@@ -223,7 +223,7 @@ local function performPick(cardRow)
 
     lastSelection = bestName
     lastPickTime = os.clock()
-    print("[CLICK] Picking card", bestIndex, ":", bestName)
+    --print("[CLICK] Picking card", bestIndex, ":", bestName)
 
     -- Server remote
     local okRemote, errRemote = pcall(fireRemote, bestName, bestIndex)
