@@ -22,6 +22,7 @@ local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
 local FactionsModule = require(ReplicatedStorage.Modules.Factions)
 local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
 local round_atom = require(ReplicatedStorage.Modules.Round.round_atom)
+local Items = require(ReplicatedStorage.Modules.Items) -- FIX: Items was never required before
 
 local player = Players.LocalPlayer
 
