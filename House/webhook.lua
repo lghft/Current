@@ -59,7 +59,7 @@ end
 -- round_atom has no end timestamp, so we record the moment game_over flips to true.
 -- We also record our own start time as a fallback in case startedAt isn't usable.
 ----------------------------------------------------------------------
-local tracker = { start = nil, endT = nil }
+local tracker = { start = nil, endT = nil, startingInventory = nil }
 
 local function updateTracker(state)
     if not state then return end
@@ -75,9 +75,17 @@ local function updateTracker(state)
         if (state.active or state.started) then
             if not tracker.start then
                 tracker.start = now
+                -- Capture starting inventory at the beginning of the round
+                local ok, inv = pcall(function()
+                    return inventoryGetters.getInventory(player)
+                end)
+                if ok and inv then
+                    tracker.startingInventory = inv
+                end
             end
         else
             tracker.start = nil
+            tracker.startingInventory = nil
         end
     end
 end
@@ -121,71 +129,37 @@ local function getRoundTimeText(state, info)
     return "Unknown"
 end
 
--- Round rewards are stored per player in round_atom().rewards["#" .. PlayerName]
--- as an array of { itemId, amount, _bonusSource?, shiny?, spirit? } (see giveRoundRewards).
-local function getRoundRewardsText(state)
-    if not state or type(state.rewards) ~= "table" then
+-- Compares starting and ending inventory to show only items that changed
+local function getDroppedItemsText(startingInventory, endInventory)
+    if not startingInventory or not endInventory then
         return "None found"
     end
 
-    local list = state.rewards["#" .. player.Name]
-    if type(list) ~= "table" or #list == 0 then
-        return "None found"
-    end
+    local changed = {}
+    local order = {}
 
-    -- Merge entries with the same item (bonus-source entries are split in the atom)
-    local order, totals = {}, {}
-    for _, reward in ipairs(list) do
-        local name = tostring(reward.itemId or "Unknown")
-        if reward.shiny then name = "Shiny " .. name end
-        if reward.spirit then name = "Spirit " .. name end
-        if not totals[name] then
-            totals[name] = 0
-            table.insert(order, name)
+    -- Check for new items or increased amounts
+    for itemId, endData in pairs(endInventory) do
+        local endAmount = endData.amount or 1
+        local startAmount = 0
+        if startingInventory[itemId] then
+            startAmount = startingInventory[itemId].amount or 1
         end
-        totals[name] = totals[name] + (tonumber(reward.amount) or 1)
+
+        local difference = endAmount - startAmount
+        if difference > 0 then
+            changed[itemId] = difference
+            table.insert(order, itemId)
+        end
+    end
+
+    if #order == 0 then
+        return "None found"
     end
 
     local lines = {}
-    for _, name in ipairs(order) do
-        table.insert(lines, string.format("`%s x%d`", name, totals[name]))
-    end
-
-    local text = table.concat(lines, "\n")
-    if #text > 1000 then -- Discord field limit is 1024
-        text = text:sub(1, 997) .. "..."
-    end
-    return text
-end
-
--- Endless crate rewards are stored per player in round_atom().crate[PlayerName]
--- as an array of { itemId, amount? } entries accumulated during the round.
-local function getEndlessRewardsText(state)
-    if not state or type(state.crate) ~= "table" then
-        return "None found"
-    end
-
-    local list = state.crate[player.Name]
-    if type(list) ~= "table" or #list == 0 then
-        return "None found"
-    end
-
-    -- Merge entries with the same item
-    local order, totals = {}, {}
-    for _, reward in ipairs(list) do
-        local name = tostring(reward.itemId or "Unknown")
-        if reward.shiny then name = "Shiny " .. name end
-        if reward.spirit then name = "Spirit " .. name end
-        if not totals[name] then
-            totals[name] = 0
-            table.insert(order, name)
-        end
-        totals[name] = totals[name] + (tonumber(reward.amount) or 1)
-    end
-
-    local lines = {}
-    for _, name in ipairs(order) do
-        table.insert(lines, string.format("`%s x%d`", name, totals[name]))
+    for _, itemId in ipairs(order) do
+        table.insert(lines, string.format("`%s x%d`", itemId, changed[itemId]))
     end
 
     local text = table.concat(lines, "\n")
@@ -199,7 +173,7 @@ end
 -- Webhook
 ----------------------------------------------------------------------
 local function sendWebhook(snapshot, info)
-    local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, inventoryData = pcall(function()
+    local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, startingInventory, endingInventory = pcall(function()
         local mainXp = XpSystem.getXp("Main", player) or 0
         local mLevel = XpSystem.xpToLevel("Main", mainXp)
         local mBaseXp = XpSystem.levelToXp(mLevel)
@@ -225,9 +199,10 @@ local function sendWebhook(snapshot, info)
         local factionCurrentXp = fXp - fBaseXp
         local fExpBar = createProgressBar(factionCurrentXp, fNextXp, 10)
 
-        local inv = inventoryGetters.getInventory(player)
+        local startInv = info.startingInventory or tracker.startingInventory
+        local endInv = inventoryGetters.getInventory(player)
 
-        return mLevel, mExpBar, currentFactionKey, fName, fLevel, fExpBar, inv
+        return mLevel, mExpBar, currentFactionKey, fName, fLevel, fExpBar, startInv, endInv
     end)
 
     if not success then
@@ -238,15 +213,18 @@ local function sendWebhook(snapshot, info)
     local targetItems = { "Coins", "VoodooToken", "GardenCoins", "RaidTokens", "KingsToken" }
 
     local foundItems = {}
-    if inventoryData then
+    if endingInventory then
         for _, itemId in ipairs(targetItems) do
-            if inventoryData[itemId] then
-                local amount = inventoryData[itemId].amount or 1
+            if endingInventory[itemId] then
+                local amount = endingInventory[itemId].amount or 1
                 table.insert(foundItems, string.format("`%s:%d`", itemId, amount))
             end
         end
     end
     local inventoryText = #foundItems > 0 and table.concat(foundItems, ", ") or "None found"
+
+    -- Get dropped items by comparing inventories
+    local droppedItemsText = getDroppedItemsText(startingInventory, endingInventory)
 
     -- Round info
     local roundState = snapshot
@@ -278,8 +256,7 @@ local function sendWebhook(snapshot, info)
                 -- Round section
                 { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
                 { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
-                { ["name"] = "Dropped / Rewarded Items", ["value"] = getRoundRewardsText(roundState), ["inline"] = false },
-                { ["name"] = "Endless Reward / Drops", ["value"] = getEndlessRewardsText(roundState), ["inline"] = false },
+                { ["name"] = "Dropped / Rewarded Items", ["value"] = droppedItemsText, ["inline"] = false },
             }
         }}
     }
@@ -333,6 +310,9 @@ local function finishRound(snapshot, info, id)
     if fresh and fresh.game_over and roundId(fresh) == id then
         snapshot = fresh
     end
+
+    -- Include starting inventory in the info table
+    info.startingInventory = tracker.startingInventory
 
     local ok, err = pcall(sendWebhook, snapshot, info)
     if not ok then
