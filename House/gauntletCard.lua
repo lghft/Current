@@ -44,10 +44,10 @@ local PRIORITY_DEBUFFS = {
     "OpenTheFourthGate", -- Legendary: Fourth track opens early (gives way at wave 45 regardless). Requires third gate open.
     "DemonWard",         -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Demon towers. Forever.
     "UndeadWard",        -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Undead towers. Forever.
-    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
     "ParanormalWard",    -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Paranormal towers. Forever.
     "HolyWard",          -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Holy towers. Forever.
     "MilitaryWard",      -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Military towers. Forever.
+    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
     "ThickHide",         -- Common: Enemies gain 10% health (waves up to 75), or 5% health (wave 76+). Repeatable.
 }
 
@@ -223,7 +223,7 @@ local function performPick(cardRow)
 
     lastSelection = bestName
     lastPickTime = os.clock()
-    --print("[CLICK] Picking card", bestIndex, ":", bestName)
+    print("[CLICK] Picking card", bestIndex, ":", bestName)
 
     -- Server remote
     local okRemote, errRemote = pcall(fireRemote, bestName, bestIndex)
