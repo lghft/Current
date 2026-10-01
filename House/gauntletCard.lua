@@ -42,9 +42,9 @@ local PRIORITY_DEBUFFS = {
     "OpenTheSecondGate", -- Rare: Second track opens early (gives way at wave 9 regardless).
     "OpenTheThirdGate",  -- Epic: Third track opens early (gives way at wave 24 regardless). Requires second gate open.
     "OpenTheFourthGate", -- Legendary: Fourth track opens early (gives way at wave 45 regardless). Requires third gate open.
-    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
     "DemonWard",         -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Demon towers. Forever.
     "UndeadWard",        -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Undead towers. Forever.
+    "AdrenalSurge",      -- Common: Enemies move 10/20/30/40/55/70% faster (tiers).
     "ParanormalWard",    -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Paranormal towers. Forever.
     "HolyWard",          -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Holy towers. Forever.
     "MilitaryWard",      -- Epic (wave 24+): Enemies take 40/60/80/95% less damage from Military towers. Forever.
@@ -60,8 +60,8 @@ local PRIORITY_MOBS = {
     "CrimsonBloom",     -- Epic (waves 22-50): 2 more Red Spores every wave.
     "ChompersToll",     -- Epic ("Chomper's Toll", waves 47-75): Two Chompers join every wave.
     "WildHunt",         -- Epic: The Deer joins every third wave. It only watches... for now.
-    "HiveGrowth",       -- Legendary (waves 47-75): 2 more Bees every wave. Slow, and very hard to put down.
     "NightTerrors",     -- Epic: A Bat joins every third wave. It sleeps... for now.
+    "HiveGrowth",       -- Legendary (waves 47-75): 2 more Bees every wave. Slow, and very hard to put down.
     "SleeplessEye",     -- Rare (waves 55-120, needs Evil Eye): A Gazer every 2 waves, then every single wave.
     "QuickenedHunt",    -- Rare (waves 70-120, needs Wild Hunt): The Deer every 2 waves, then every single wave.
     "PetrifyingGaze",   -- Epic (wave 75+, needs Evil Eye): Gazers have a 25/50/75/100% chance to stun towers.
