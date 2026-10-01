@@ -158,6 +158,43 @@ local function getRoundRewardsText(state)
     return text
 end
 
+-- Endless crate rewards are stored per player in round_atom().crate[PlayerName]
+-- as an array of { itemId, amount? } entries accumulated during the round.
+local function getEndlessRewardsText(state)
+    if not state or type(state.crate) ~= "table" then
+        return "None found"
+    end
+
+    local list = state.crate[player.Name]
+    if type(list) ~= "table" or #list == 0 then
+        return "None found"
+    end
+
+    -- Merge entries with the same item
+    local order, totals = {}, {}
+    for _, reward in ipairs(list) do
+        local name = tostring(reward.itemId or "Unknown")
+        if reward.shiny then name = "Shiny " .. name end
+        if reward.spirit then name = "Spirit " .. name end
+        if not totals[name] then
+            totals[name] = 0
+            table.insert(order, name)
+        end
+        totals[name] = totals[name] + (tonumber(reward.amount) or 1)
+    end
+
+    local lines = {}
+    for _, name in ipairs(order) do
+        table.insert(lines, string.format("`%s x%d`", name, totals[name]))
+    end
+
+    local text = table.concat(lines, "\n")
+    if #text > 1000 then -- Discord field limit is 1024
+        text = text:sub(1, 997) .. "..."
+    end
+    return text
+end
+
 ----------------------------------------------------------------------
 -- Webhook
 ----------------------------------------------------------------------
@@ -242,6 +279,7 @@ local function sendWebhook(snapshot, info)
                 { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
                 { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
                 { ["name"] = "Dropped / Rewarded Items", ["value"] = getRoundRewardsText(roundState), ["inline"] = false },
+                { ["name"] = "Endless Reward / Drops", ["value"] = getEndlessRewardsText(roundState), ["inline"] = false },
             }
         }}
     }
