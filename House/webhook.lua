@@ -3,7 +3,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Don't hardcode your webhook here. Set it before running: getgenv().WEBHOOK_URL = "..."
-local webhookUrl = getgenv().WEBHOOK_URL or "https://discord.com/api/webhooks/1414475376230535199/F6V5IZJkOUMdxd-ZdC32JdlaTw-FGDz-raRMGW7a6FsYTmYtRkqOSfLy123hat3xSNR1"
+local webhookUrl = getgenv().WEBHOOK_URL or "PASTE_NEW_WEBHOOK_URL_HERE"
 
 -- Set getgenv().AUTO_SEND = false to send once immediately instead of after every round
 local AUTO_SEND = getgenv().AUTO_SEND ~= false
@@ -264,12 +264,20 @@ local function sendWebhook(snapshot, info)
 end
 
 ----------------------------------------------------------------------
--- Trigger (multi-round)
--- Each round gets an ID from startedAt/startAt. A round is sent once when game_over is true.
--- The loop never blocks, so back-to-back rounds in the same server are all caught.
+-- Trigger (multi-round, duplicate-proof)
+--  * Singleton: re-running this script stops the previous loop instead of stacking a second one.
+--  * Round ID: each round is sent once, keyed by startedAt/startAt.
+--  * Re-arm debounce: game_over must stay false for REARM_AFTER seconds before the same ID can send again,
+--    so a flicker at the end of a round can't trigger a second send.
+--  * MIN_GAP: hard minimum time between sends (shared across copies via getgenv).
 ----------------------------------------------------------------------
 local POLL_RATE = 0.25
 local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
+local REARM_AFTER = 3 -- seconds game_over must be false before the same round ID can send again
+local MIN_GAP = 10 -- minimum seconds between any two webhook sends
+
+local runToken = {}
+getgenv().__ROUND_WEBHOOK_RUN = runToken -- any older loop sees a different token and exits
 
 local function roundId(state)
     -- startedAt changes every round; startAt is the fallback
@@ -298,6 +306,7 @@ if AUTO_SEND then
     task.spawn(function()
         local lastSentId = nil
         local currentId = nil
+        local falseSince = nil
 
         -- Don't re-send a round that had already ended before launch
         local initial = readRoundState()
@@ -310,6 +319,10 @@ if AUTO_SEND then
         end
 
         while task.wait(POLL_RATE) do
+            if getgenv().__ROUND_WEBHOOK_RUN ~= runToken then
+                break -- a newer copy of this script took over
+            end
+
             local state = readRoundState()
             if state then
                 local id = roundId(state)
@@ -323,15 +336,26 @@ if AUTO_SEND then
 
                 updateTracker(state)
 
-                -- Round is running again: re-arm, even if the ID didn't change
-                if not state.game_over then
-                    lastSentId = nil
-                end
+                if state.game_over then
+                    falseSince = nil
 
-                if state.game_over and lastSentId ~= id then
-                    lastSentId = id -- mark first so this round can never send twice
-                    local info = { start = tracker.start, endT = tracker.endT }
-                    task.spawn(finishRound, state, info, id)
+                    if lastSentId ~= id then
+                        lastSentId = id -- mark first so this round can never send twice
+
+                        local now = os.clock()
+                        local last = getgenv().__ROUND_WEBHOOK_LAST or -math.huge
+                        if now - last >= MIN_GAP then
+                            getgenv().__ROUND_WEBHOOK_LAST = now
+                            local info = { start = tracker.start, endT = tracker.endT }
+                            task.spawn(finishRound, state, info, id)
+                        end
+                    end
+                else
+                    -- Round running: only re-arm after game_over has been false for a stable stretch
+                    falseSince = falseSince or os.clock()
+                    if os.clock() - falseSince >= REARM_AFTER then
+                        lastSentId = nil
+                    end
                 end
             end
         end
