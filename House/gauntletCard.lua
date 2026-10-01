@@ -53,6 +53,13 @@ local PRIORITY_DEBUFFS = {
 
 local PRIORITY_MOBS = {
     "EvilEye",          -- Epic: A Gazer joins every third wave. Its eye stays shut... for now.
+    "NightTerrors",     -- Epic: A Bat joins every third wave. It sleeps... for now.
+    "PetrifyingGaze",   -- Epic (wave 75+, needs Evil Eye): Gazers have a 25/50/75/100% chance to stun towers.
+    "PrimalCharge",     -- Epic (wave 90+, needs Wild Hunt): The Deer has a 25/50/75/100% chance to charge.
+    "SleeplessEye",     -- Rare (waves 55-120, needs Evil Eye): A Gazer every 2 waves, then every single wave.
+    "QuickenedHunt",    -- Rare (waves 70-120, needs Wild Hunt): The Deer every 2 waves, then every single wave.
+    "RestlessRoost",    -- Rare (waves 40-120, needs Night Terrors): A Bat every 2 waves, then every single wave.
+    "SnatchingScreech", -- Epic (wave 60+, needs Night Terrors): Bats have a 25/50/75/100% chance to snatch towers.
     "DemonPack",        -- Rare (max wave 25): 3 more Demon Minions every wave.
     "ClipperBloom",     -- Common (max wave 25): 4 more Clippers every wave.
     "SporeStorm",       -- Common (max wave 25): 6 more Spores every wave.
@@ -60,14 +67,7 @@ local PRIORITY_MOBS = {
     "CrimsonBloom",     -- Epic (waves 22-50): 2 more Red Spores every wave.
     "ChompersToll",     -- Epic ("Chomper's Toll", waves 47-75): Two Chompers join every wave.
     "WildHunt",         -- Epic: The Deer joins every third wave. It only watches... for now.
-    "NightTerrors",     -- Epic: A Bat joins every third wave. It sleeps... for now.
     "HiveGrowth",       -- Legendary (waves 47-75): 2 more Bees every wave. Slow, and very hard to put down.
-    "SleeplessEye",     -- Rare (waves 55-120, needs Evil Eye): A Gazer every 2 waves, then every single wave.
-    "QuickenedHunt",    -- Rare (waves 70-120, needs Wild Hunt): The Deer every 2 waves, then every single wave.
-    "PetrifyingGaze",   -- Epic (wave 75+, needs Evil Eye): Gazers have a 25/50/75/100% chance to stun towers.
-    "PrimalCharge",     -- Epic (wave 90+, needs Wild Hunt): The Deer has a 25/50/75/100% chance to charge.
-    "RestlessRoost",    -- Rare (waves 40-120, needs Night Terrors): A Bat every 2 waves, then every single wave.
-    "SnatchingScreech", -- Epic (wave 60+, needs Night Terrors): Bats have a 25/50/75/100% chance to snatch towers.
 }
 
 --------------------------------------------------------------------
