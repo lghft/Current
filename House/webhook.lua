@@ -2,13 +2,8 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Don't hardcode your webhook here. Set it before running: getgenv().WEBHOOK_URL = "..."
 local webhookUrl = getgenv().WEBHOOK_URL or "PASTE_NEW_WEBHOOK_URL_HERE"
-
--- Set getgenv().AUTO_SEND = false to send once immediately instead of after every round
 local AUTO_SEND = getgenv().AUTO_SEND ~= false
-
--- Set getgenv().DEBUG = true to enable debug logging
 local DEBUG = getgenv().DEBUG or false
 
 local function debug(...)
@@ -22,7 +17,7 @@ local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
 local FactionsModule = require(ReplicatedStorage.Modules.Factions)
 local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
 local round_atom = require(ReplicatedStorage.Modules.Round.round_atom)
-local Items = require(ReplicatedStorage.Modules.Items) -- FIX: Items was never required before
+local Items = require(ReplicatedStorage.Modules.Items)
 
 local player = Players.LocalPlayer
 
@@ -380,15 +375,6 @@ local function sendWebhook(snapshot, info)
         end)
     end
 end
-
-----------------------------------------------------------------------
--- Trigger (multi-round, duplicate-proof)
---  * Singleton: re-running this script stops the previous loop instead of stacking a second one.
---  * Round ID: each round is sent once, keyed by startedAt/startAt.
---  * Re-arm debounce: game_over must stay false for REARM_AFTER seconds before the same ID can send again,
---    so a flicker at the end of a round can't trigger a second send.
---  * MIN_GAP: hard minimum time between sends (shared across copies via getgenv).
-----------------------------------------------------------------------
 local POLL_RATE = 0.25
 local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
 local REARM_AFTER = 3 -- seconds game_over must be false before the same round ID can send again
