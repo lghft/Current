@@ -99,9 +99,10 @@ local function getResultText(state)
     return label .. " (" .. details .. ")"
 end
 
-local function getRoundTimeText(state)
+local function getRoundTimeText(state, info)
     if not state then return "Unknown" end
-    local endT = tracker.endT or workspace:GetServerTimeNow()
+    info = info or tracker
+    local endT = info.endT or workspace:GetServerTimeNow()
 
     -- Prefer the game's own startedAt
     local s = state.startedAt
@@ -113,8 +114,8 @@ local function getRoundTimeText(state)
     end
 
     -- Fall back to when this script first saw the round go active
-    if tracker.start then
-        return formatSeconds(endT - tracker.start)
+    if info.start then
+        return formatSeconds(endT - info.start)
     end
 
     return "Unknown"
@@ -160,7 +161,7 @@ end
 ----------------------------------------------------------------------
 -- Webhook
 ----------------------------------------------------------------------
-local function sendWebhook()
+local function sendWebhook(snapshot, info)
     local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, inventoryData = pcall(function()
         local mainXp = XpSystem.getXp("Main", player) or 0
         local mLevel = XpSystem.xpToLevel("Main", mainXp)
@@ -211,8 +212,11 @@ local function sendWebhook()
     local inventoryText = #foundItems > 0 and table.concat(foundItems, ", ") or "None found"
 
     -- Round info
-    local roundState = readRoundState()
-    updateTracker(roundState)
+    local roundState = snapshot
+    if not roundState then
+        roundState = readRoundState()
+        updateTracker(roundState)
+    end
 
     local data = {
         ["content"] = "",
@@ -236,7 +240,7 @@ local function sendWebhook()
 
                 -- Round section
                 { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
-                { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState), ["inline"] = false },
+                { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
                 { ["name"] = "Dropped / Rewarded Items", ["value"] = getRoundRewardsText(roundState), ["inline"] = false },
             }
         }}
@@ -260,28 +264,75 @@ local function sendWebhook()
 end
 
 ----------------------------------------------------------------------
--- Trigger
+-- Trigger (multi-round)
+-- Each round gets an ID from startedAt/startAt. A round is sent once when game_over is true.
+-- The loop never blocks, so back-to-back rounds in the same server are all caught.
 ----------------------------------------------------------------------
+local POLL_RATE = 0.25
+local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
+
+local function roundId(state)
+    -- startedAt changes every round; startAt is the fallback
+    local s = tonumber(state.startedAt) or 0
+    if s > 0 then return "s" .. s end
+    return "a" .. tostring(state.startAt)
+end
+
+local function finishRound(snapshot, info, id)
+    task.wait(REWARD_DELAY)
+
+    -- If this round is still the one on screen, re-read for the most complete rewards list.
+    -- If the next round already started, keep the snapshot so we don't report the wrong round.
+    local fresh = readRoundState()
+    if fresh and fresh.game_over and roundId(fresh) == id then
+        snapshot = fresh
+    end
+
+    local ok, err = pcall(sendWebhook, snapshot, info)
+    if not ok then
+        warn("[webhook] send failed:", err)
+    end
+end
+
 if AUTO_SEND then
     task.spawn(function()
-        local wasGameOver = false
+        local lastSentId = nil
+        local currentId = nil
+
+        -- Don't re-send a round that had already ended before launch
         local initial = readRoundState()
         if initial then
-            wasGameOver = initial.game_over == true -- don't re-send a round that already ended before launch
+            currentId = roundId(initial)
             updateTracker(initial)
+            if initial.game_over then
+                lastSentId = currentId
+            end
         end
 
-        while task.wait(0.5) do
+        while task.wait(POLL_RATE) do
             local state = readRoundState()
             if state then
-                updateTracker(state) -- stamps the end time on the first tick game_over is true
+                local id = roundId(state)
 
-                local isGameOver = state.game_over == true
-                if isGameOver and not wasGameOver then
-                    task.wait(2) -- give the server time to finish handing out rewards
-                    sendWebhook()
+                -- New round detected: reset timing so it doesn't carry over
+                if id ~= currentId then
+                    currentId = id
+                    tracker.start = nil
+                    tracker.endT = nil
                 end
-                wasGameOver = isGameOver
+
+                updateTracker(state)
+
+                -- Round is running again: re-arm, even if the ID didn't change
+                if not state.game_over then
+                    lastSentId = nil
+                end
+
+                if state.game_over and lastSentId ~= id then
+                    lastSentId = id -- mark first so this round can never send twice
+                    local info = { start = tracker.start, endT = tracker.endT }
+                    task.spawn(finishRound, state, info, id)
+                end
             end
         end
     end)
