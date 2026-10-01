@@ -170,47 +170,45 @@ local function getDroppedItemsText(startingInventory, endInventory)
 end
 
 -- Extracts crate rewards from round state
--- Crate structure: state.crate[crateName][number] = { itemId, max, min }
+-- Crate structure: state.crate[playerName][number] = { itemId, max, min }
 local function getCrateRewardsText(state)
     if not state or type(state.crate) ~= "table" then
         return "None found"
     end
 
-    local crateData = {}
-    
-    -- Iterate through each crate type (e.g., "k_quc")
-    for crateName, crateContents in pairs(state.crate) do
-        if type(crateContents) == "table" then
-            -- Find the highest numbered key to count crates
-            local maxCrateCount = 0
-            for key in pairs(crateContents) do
-                local num = tonumber(key)
-                if num and num > maxCrateCount then
-                    maxCrateCount = num
-                end
-            end
-            
-            if maxCrateCount > 0 then
-                -- Try to get the crate's display name from Items module
-                local displayName = crateName
-                local ok, result = pcall(Items.get, crateName)
-                if ok and result and result.name then
-                    displayName = result.name
-                end
-                
-                table.insert(crateData, string.format("`%s: %d`", displayName, maxCrateCount))
-            end
-        end
-    end
-
-    if #crateData == 0 then
+    -- Get the player's crate data
+    local playerCrates = state.crate[player.Name]
+    if not playerCrates or type(playerCrates) ~= "table" then
         return "None found"
     end
 
-    local text = table.concat(crateData, "\n")
-    if #text > 1000 then -- Discord field limit is 1024
-        text = text:sub(1, 997) .. "..."
+    -- Find the highest numbered key to count crates earned
+    local maxCrateCount = 0
+    for key in pairs(playerCrates) do
+        local num = tonumber(key)
+        if num and num > maxCrateCount then
+            maxCrateCount = num
+        end
     end
+
+    if maxCrateCount == 0 then
+        return "None found"
+    end
+
+    -- Get the crate name from the waves configuration
+    local crateName = "Endless Crate" -- Default fallback
+    local ok, crateConfig = pcall(function()
+        return state.waves.settings.endless.crate
+    end)
+    
+    if ok and crateConfig and crateConfig.item then
+        local itemOk, itemResult = pcall(Items.get, crateConfig.item)
+        if itemOk and itemResult and itemResult.name then
+            crateName = itemResult.name
+        end
+    end
+
+    local text = string.format("`%s: %d`", crateName, maxCrateCount)
     return text
 end
 
