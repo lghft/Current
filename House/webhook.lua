@@ -33,7 +33,6 @@ local SPECIAL_ITEMS = {
     TheWatcherUrn = true,
     WatcherUrn = true,
     DemonicEffigy = true,
-    EternalAmulet = true, -- common drop, here for testing
 }
 
 -- Returns the matched special item ID (string) or nil
