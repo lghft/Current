@@ -33,6 +33,7 @@ local SPECIAL_ITEMS = {
     TheWatcherUrn = true,
     WatcherUrn = true,
     DemonicEffigy = true,
+    EternalAmulet = true, -- common drop, here for testing
 }
 
 -- Returns the matched special item ID (string) or nil
@@ -247,6 +248,8 @@ local function getCrateRewardsText(state)
                     maxIndex = num
                 end
 
+                debug("crate", crateNumber, crateId, key, type(item) == "table" and item.itemId or item)
+
                 local matched = matchSpecial(key, item)
                 if matched then
                     table.insert(found, matched)
@@ -422,13 +425,27 @@ local function roundId(state)
     return "a" .. tostring(state.startAt)
 end
 
+local bestSnapshots = {} -- round id -> latest state that contained rewards
+
+local function hasRewards(state)
+    local pr = type(state.rewards) == "table" and state.rewards["#" .. player.Name]
+    return type(pr) == "table" and #pr > 0
+end
+
 local function finishRound(snapshot, info, id)
     task.wait(REWARD_DELAY)
 
+    -- Prefer a fresh read if it still has rewards; otherwise fall back to the
+    -- last snapshot we saw with rewards, so leaving the results screen early can't lose them.
     local fresh = readRoundState()
-    if fresh and fresh.game_over and roundId(fresh) == id then
+    if fresh and fresh.game_over and roundId(fresh) == id and hasRewards(fresh) then
+        snapshot = fresh
+    elseif bestSnapshots[id] then
+        snapshot = bestSnapshots[id]
+    elseif fresh and fresh.game_over and roundId(fresh) == id then
         snapshot = fresh
     end
+    bestSnapshots[id] = nil
 
     info.startingInventory = tracker.startingInventory
 
@@ -469,6 +486,10 @@ if AUTO_SEND then
                 end
 
                 updateTracker(state)
+
+                if hasRewards(state) then
+                    bestSnapshots[id] = state
+                end
 
                 if state.game_over then
                     falseSince = nil
