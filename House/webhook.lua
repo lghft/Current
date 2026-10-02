@@ -22,9 +22,45 @@ local XpSystem = require(ReplicatedStorage.Modules.XpSystem)
 local FactionsModule = require(ReplicatedStorage.Modules.Factions)
 local FactionsDatabase = require(ReplicatedStorage.Databases.Factions)
 local round_atom = require(ReplicatedStorage.Modules.Round.round_atom)
-local Items = require(ReplicatedStorage.Modules.Items) -- FIX: Items was never required before
+local Items = require(ReplicatedStorage.Modules.Items)
 
 local player = Players.LocalPlayer
+
+----------------------------------------------------------------------
+-- Special items to flag inside crates (add more IDs here if needed)
+----------------------------------------------------------------------
+local SPECIAL_ITEMS = {
+    TheWatcherUrn = true,
+    WatcherUrn = true,
+    DemonicEffigy = true,
+}
+
+-- Returns the matched special item ID (string) or nil
+local function matchSpecial(key, item)
+    if type(key) == "string" and SPECIAL_ITEMS[key] then
+        return key
+    end
+    if type(item) == "string" and SPECIAL_ITEMS[item] then
+        return item
+    end
+    if type(item) == "table" then
+        for _, field in ipairs({ "itemId", "id", "name", "item" }) do
+            local v = item[field]
+            if type(v) == "string" and SPECIAL_ITEMS[v] then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+local function getItemName(itemId)
+    local ok, itemResult = pcall(Items.get, itemId)
+    if ok and itemResult and itemResult.name then
+        return itemResult.name
+    end
+    return itemId
+end
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -66,8 +102,6 @@ end
 
 ----------------------------------------------------------------------
 -- Round tracking
--- round_atom has no end timestamp, so we record the moment game_over flips to true.
--- We also record our own start time as a fallback in case startedAt isn't usable.
 ----------------------------------------------------------------------
 local tracker = { start = nil, endT = nil, startingInventory = nil }
 
@@ -80,12 +114,10 @@ local function updateTracker(state)
             tracker.endT = now
         end
     else
-        -- A new round is underway (or none yet): clear last round's end marker
         tracker.endT = nil
         if (state.active or state.started) then
             if not tracker.start then
                 tracker.start = now
-                -- Capture starting inventory at the beginning of the round
                 local ok, inv = pcall(function()
                     return inventoryGetters.getInventory(player)
                 end)
@@ -122,7 +154,6 @@ local function getRoundTimeText(state, info)
     info = info or tracker
     local endT = info.endT or workspace:GetServerTimeNow()
 
-    -- Prefer the game's own startedAt
     local s = state.startedAt
     if type(s) == "number" and s > 0 then
         local diff = endT - s
@@ -131,7 +162,6 @@ local function getRoundTimeText(state, info)
         end
     end
 
-    -- Fall back to when this script first saw the round go active
     if info.start then
         return formatSeconds(endT - info.start)
     end
@@ -145,23 +175,20 @@ local function getDroppedItemsText(state)
         return "None found"
     end
 
-    -- Get the player's rewards data (keyed with "#" prefix)
     local playerRewards = state.rewards["#" .. player.Name]
     if not playerRewards or type(playerRewards) ~= "table" then
         return "None found"
     end
 
-    -- Find non-crate rewards (entries without a contents field)
     local itemMap = {}
     local itemOrder = {}
 
     for _, reward in ipairs(playerRewards) do
         if type(reward) == "table" and not reward.contents then
-            -- This is a non-crate reward
             local itemId = reward.itemId
             if itemId then
                 local amount = reward.amount or 1
-                
+
                 if not itemMap[itemId] then
                     itemMap[itemId] = 0
                     table.insert(itemOrder, itemId)
@@ -175,17 +202,9 @@ local function getDroppedItemsText(state)
         return "None found"
     end
 
-    -- Format the output with item display names
     local lines = {}
     for _, itemId in ipairs(itemOrder) do
-        local itemName = itemId
-        local ok, itemResult = pcall(Items.get, itemId)
-        if ok and itemResult and itemResult.name then
-            itemName = itemResult.name
-        end
-
-        local amount = itemMap[itemId]
-        table.insert(lines, string.format("`%s x%d`", itemName, amount))
+        table.insert(lines, string.format("`%s x%d`", getItemName(itemId), itemMap[itemId]))
     end
 
     local text = table.concat(lines, "\n")
@@ -195,57 +214,54 @@ local function getDroppedItemsText(state)
     return text
 end
 
--- Extracts crate rewards from round state
--- Crate rewards are stored in rewards["#" .. playerName] as entries with a contents field
--- The highest numeric index within contents = the number of items in that crate
--- Shows if TheWatcherUrn is found inside the crate
+-- Extracts crate rewards from round state.
+-- Each crate is numbered in the order it appears. Any special item found inside a crate
+-- is listed separately with its crate number, crate name and item ID.
 local function getCrateRewardsText(state)
     if not state or type(state.rewards) ~= "table" then
         return "None found"
     end
 
-    -- Get the player's rewards data (keyed with "#" prefix)
     local playerRewards = state.rewards["#" .. player.Name]
     if not playerRewards or type(playerRewards) ~= "table" then
         return "None found"
     end
 
-    -- Item to look for inside crates
-    local SPECIAL_ITEM = "TheWatcherUrn" or "WatcherUrn"
-
-    -- Find crate rewards (entries with a contents field) and count items
     local crateMap = {}
     local crateOrder = {}
-    
+    local specialLines = {}
+    local crateNumber = 0
+
     for _, reward in ipairs(playerRewards) do
-        if type(reward) == "table" and reward.contents then
+        if type(reward) == "table" and reward.contents and reward.itemId and type(reward.contents) == "table" then
+            crateNumber = crateNumber + 1
             local crateId = reward.itemId
-            if crateId and type(reward.contents) == "table" then
-                -- Find the highest numeric index in contents
-                local maxIndex = 0
-                local hasSpecialItem = false
-                
-                for key, item in pairs(reward.contents) do
-                    local num = tonumber(key)
-                    if num and num > maxIndex then
-                        maxIndex = num
-                    end
-                    
-                    -- Check if this item is the special item we're looking for
-                    if type(item) == "table" and item.itemId == SPECIAL_ITEM then
-                        hasSpecialItem = true
-                    end
+            local crateName = getItemName(crateId)
+
+            local maxIndex = 0
+            local found = {}
+
+            for key, item in pairs(reward.contents) do
+                local num = tonumber(key)
+                if num and num > maxIndex then
+                    maxIndex = num
                 end
-                
-                if maxIndex > 0 then
-                    if not crateMap[crateId] then
-                        crateMap[crateId] = {count = 0, hasSpecial = false}
-                        table.insert(crateOrder, crateId)
-                    end
-                    crateMap[crateId].count = crateMap[crateId].count + maxIndex
-                    if hasSpecialItem then
-                        crateMap[crateId].hasSpecial = true
-                    end
+
+                local matched = matchSpecial(key, item)
+                if matched then
+                    table.insert(found, matched)
+                end
+            end
+
+            if maxIndex > 0 then
+                if not crateMap[crateId] then
+                    crateMap[crateId] = 0
+                    table.insert(crateOrder, crateId)
+                end
+                crateMap[crateId] = crateMap[crateId] + maxIndex
+
+                for _, specialId in ipairs(found) do
+                    table.insert(specialLines, string.format("`Crate #%d (%s): %s`", crateNumber, crateName, specialId))
                 end
             end
         end
@@ -255,20 +271,16 @@ local function getCrateRewardsText(state)
         return "None found"
     end
 
-    -- Format the output with crate display names
     local lines = {}
     for _, crateId in ipairs(crateOrder) do
-        local crateName = crateId
-        local ok, itemResult = pcall(Items.get, crateId)
-        if ok and itemResult and itemResult.name then
-            crateName = itemResult.name
-        end
-        
-        local itemCount = crateMap[crateId].count
-        if crateMap[crateId].hasSpecial then
-            table.insert(lines, string.format("`%s: %d (%s)`", crateName, itemCount, SPECIAL_ITEM))
-        else
-            table.insert(lines, string.format("`%s: %d`", crateName, itemCount))
+        table.insert(lines, string.format("`%s: %d`", getItemName(crateId), crateMap[crateId]))
+    end
+
+    if #specialLines > 0 then
+        table.insert(lines, "")
+        table.insert(lines, "🌟 **Special Items**")
+        for _, line in ipairs(specialLines) do
+            table.insert(lines, line)
         end
     end
 
@@ -283,6 +295,7 @@ end
 -- Webhook
 ----------------------------------------------------------------------
 local function sendWebhook(snapshot, info)
+    info = info or {}
     local success, mainLevel, mainExpBarText, factionKey, factionName, factionLevel, factionExpBarText, startingInventory, endingInventory = pcall(function()
         local mainXp = XpSystem.getXp("Main", player) or 0
         local mLevel = XpSystem.xpToLevel("Main", mainXp)
@@ -333,17 +346,14 @@ local function sendWebhook(snapshot, info)
     end
     local inventoryText = #foundItems > 0 and table.concat(foundItems, ", ") or "None found"
 
-    -- Round info
     local roundState = snapshot
     if not roundState then
         roundState = readRoundState()
         updateTracker(roundState)
     end
 
-    -- Get dropped items from rewards
     local droppedItemsText = getDroppedItemsText(roundState)
 
-    -- Build fields array
     local fields = {
         { ["name"] = "Display Name", ["value"] = "||" .. player.DisplayName .. "||", ["inline"] = true },
         { ["name"] = "Username", ["value"] = "||" .. player.Name .. "||", ["inline"] = true },
@@ -359,13 +369,11 @@ local function sendWebhook(snapshot, info)
         },
         { ["name"] = "Target Inventory Items", ["value"] = inventoryText, ["inline"] = false },
 
-        -- Round section
         { ["name"] = "Round Result", ["value"] = getResultText(roundState), ["inline"] = false },
         { ["name"] = "Round Time", ["value"] = getRoundTimeText(roundState, info), ["inline"] = false },
         { ["name"] = "Dropped / Rewarded Items", ["value"] = droppedItemsText, ["inline"] = false },
     }
 
-    -- Add crate rewards section if crates exist
     local crateRewardsText = getCrateRewardsText(roundState)
     if crateRewardsText ~= "None found" then
         table.insert(fields, { ["name"] = "Crate Rewards", ["value"] = crateRewardsText, ["inline"] = false })
@@ -399,11 +407,6 @@ end
 
 ----------------------------------------------------------------------
 -- Trigger (multi-round, duplicate-proof)
---  * Singleton: re-running this script stops the previous loop instead of stacking a second one.
---  * Round ID: each round is sent once, keyed by startedAt/startAt.
---  * Re-arm debounce: game_over must stay false for REARM_AFTER seconds before the same ID can send again,
---    so a flicker at the end of a round can't trigger a second send.
---  * MIN_GAP: hard minimum time between sends (shared across copies via getgenv).
 ----------------------------------------------------------------------
 local POLL_RATE = 0.25
 local REWARD_DELAY = 2 -- seconds to let the server finish handing out rewards
@@ -414,7 +417,6 @@ local runToken = {}
 getgenv().__ROUND_WEBHOOK_RUN = runToken -- any older loop sees a different token and exits
 
 local function roundId(state)
-    -- startedAt changes every round; startAt is the fallback
     local s = tonumber(state.startedAt) or 0
     if s > 0 then return "s" .. s end
     return "a" .. tostring(state.startAt)
@@ -423,14 +425,11 @@ end
 local function finishRound(snapshot, info, id)
     task.wait(REWARD_DELAY)
 
-    -- If this round is still the one on screen, re-read for the most complete rewards list.
-    -- If the next round already started, keep the snapshot so we don't report the wrong round.
     local fresh = readRoundState()
     if fresh and fresh.game_over and roundId(fresh) == id then
         snapshot = fresh
     end
 
-    -- Include starting inventory in the info table
     info.startingInventory = tracker.startingInventory
 
     local ok, err = pcall(sendWebhook, snapshot, info)
@@ -445,7 +444,6 @@ if AUTO_SEND then
         local currentId = nil
         local falseSince = nil
 
-        -- Don't re-send a round that had already ended before launch
         local initial = readRoundState()
         if initial then
             currentId = roundId(initial)
@@ -457,14 +455,13 @@ if AUTO_SEND then
 
         while task.wait(POLL_RATE) do
             if getgenv().__ROUND_WEBHOOK_RUN ~= runToken then
-                break -- a newer copy of this script took over
+                break
             end
 
             local state = readRoundState()
             if state then
                 local id = roundId(state)
 
-                -- New round detected: reset timing so it doesn't carry over
                 if id ~= currentId then
                     currentId = id
                     tracker.start = nil
@@ -477,7 +474,7 @@ if AUTO_SEND then
                     falseSince = nil
 
                     if lastSentId ~= id then
-                        lastSentId = id -- mark first so this round can never send twice
+                        lastSentId = id
 
                         local now = os.clock()
                         local last = getgenv().__ROUND_WEBHOOK_LAST or -math.huge
@@ -488,7 +485,6 @@ if AUTO_SEND then
                         end
                     end
                 else
-                    -- Round running: only re-arm after game_over has been false for a stable stretch
                     falseSince = falseSince or os.clock()
                     if os.clock() - falseSince >= REARM_AFTER then
                         lastSentId = nil
