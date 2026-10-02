@@ -211,7 +211,7 @@ local function getCrateRewardsText(state)
     end
 
     -- Item to look for inside crates
-    local SPECIAL_ITEM = "TheWatcherUrn"
+    local SPECIAL_ITEM = "TheWatcherUrn" or "WatcherUrn"
 
     -- Find crate rewards (entries with a contents field) and count items
     local crateMap = {}
