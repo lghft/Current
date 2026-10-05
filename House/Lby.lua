@@ -56,8 +56,8 @@ local proximityThreshold = 10 -- Adjust this distance as needed
 getgenv().Mode = "Raid" --Story,Event,Garden,Raid
 getgenv().Floor = 4 -- Event:1, Garden:1
 getgenv().Stage = 4 
-getgenv().raidStage = 2 
-getgenv().eventStage = "Military"
+getgenv().raidStage = 5 
+getgenv().eventStage = "Prison"
 getgenv().Walk = true
 
 -- RAID SPECIFIC SETTINGS
@@ -328,11 +328,11 @@ print("[Loadout] Initializing hotbar data...")
 updateHotbarData()
 
 player.CharacterAdded:Connect(function(char)
-    loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
+    --loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
 end)
 
 task.spawn(function()
-    loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
+    --loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/Float.lua'))()
 end)
 
 local v3 = require(game:GetService("ReplicatedStorage").Databases.Challenges)
@@ -582,16 +582,40 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
             
             task.wait(0.5)
             
-            -- Garden uses different remote structure
+            -- Garden remotes live under GardenGamepad.GamePad (same layout as other modes)
             local gardenGamepad = workspace["Garden1-Lobby"].Model.GardenGamepad
-            if gardenGamepad then
-                pcall(function()
-                    local startRemote = gardenGamepad:FindFirstChild("RE") and gardenGamepad.RE:FindFirstChild("Start")
-                    if startRemote then
-                        startRemote:FireServer()
-                        print("started garden")
+            local gamePadDir = gardenGamepad:FindFirstChild("GamePad") or gardenGamepad:WaitForChild("GamePad", 5)
+            
+            if gamePadDir then
+                local rf = gamePadDir:FindFirstChild("RF") or gamePadDir:WaitForChild("RF", 5)
+                local re = gamePadDir:FindFirstChild("RE") or gamePadDir:WaitForChild("RE", 5)
+                local setCapacityRemote = rf and rf:FindFirstChild("setCapacity")
+                local startRemote = re and re:FindFirstChild("Start")
+                
+                -- Set capacity (called twice, same as the other modes)
+                for i = 1, 2 do
+                    if setCapacityRemote then
+                        local ok, err = pcall(function()
+                            setCapacityRemote:InvokeServer(1)
+                        end)
+                        print("[Garden] set capacity - call " .. i, ok, err)
+                    else
+                        warn("[Garden] setCapacity remote not found!")
                     end
-                end)
+                    task.wait(0.25)
+                end
+                
+                -- Start the match
+                if startRemote then
+                    local ok, err = pcall(function()
+                        startRemote:FireServer()
+                    end)
+                    print("[Garden] started", ok, err)
+                else
+                    warn("[Garden] Start remote not found!")
+                end
+            else
+                warn("[Garden] Could not find GamePad under GardenGamepad!")
             end
         else
             warn("Could not find Garden entrance!")
@@ -599,10 +623,206 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
     
     -- === EVENT MODE === --
     else
-        print("Detected Event mode - using purge doors...")
+        print("Detected Event mode - checking event stage...")
         
-        -- Get open purge doors
-        local openDoors = getOpenPurgeDoors()
+        -- Check if eventStage requires special handling
+        local eventStage = getgenv().eventStage
+        local godStages = {"Hades", "Poseidon", "Zeus", "Ares"}
+        local isGodStage = false
+        
+        for _, stage in ipairs(godStages) do
+            if eventStage == stage then
+                isGodStage = true
+                break
+            end
+        end
+        
+        if isGodStage or eventStage == "Prison" then
+            -- SPECIAL STAGE HANDLING (skip purge doors entirely)
+            print("[Event] Processing special event stage: " .. eventStage)
+            
+            if eventStage == "Prison" then
+                -- ItemTeleport for Prison only
+                local itemTeleportEvent = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.ItemTeleport
+                pcall(function()
+                    itemTeleportEvent:FireServer("PrisonKey")
+                    print("[Event] ItemTeleport called with PrisonKey")
+                end)
+                task.wait(0.5)
+            else
+                -- PreloadFloor & MoveToFloor for all special stages
+                local preloadEvent = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteFunction.PreloadFloor
+                pcall(function()
+                    preloadEvent:InvokeServer("Event", 1)
+                    print("[Event] PreloadFloor called for Event Floor 1")
+                end)
+                
+                task.wait(0.5)
+                
+                local moveEvent = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.MoveToFloor
+                pcall(function()
+                    moveEvent:FireServer("Event", 1)
+                    print("[Event] MoveToFloor called for Event Floor 1")
+                end)
+            end
+            
+            task.wait(1)
+            
+            -- Get gamepad from the floor we just entered
+            if eventStage == "Prison" then
+                -- Prison gamepad lives in KingsLobby, not _Floors. Wait for it to load after ItemTeleport.
+                promptPart = nil
+                local deadline = tick() + 15
+                repeat
+                    local kl = workspace:FindFirstChild("KingsLobby")
+                    local map = kl and kl:FindFirstChild("Map")
+                    local pg = map and map:FindFirstChild("PrisonGamepad")
+                    local f3 = pg and pg:FindFirstChild("Floor3Gamepad")
+                    promptPart = f3 and f3:FindFirstChild("Prompt")
+                    if not promptPart then task.wait(0.25) end
+                until promptPart or tick() > deadline
+            else
+                promptPart = getTargetPromptPart(getgenv().Floor, getgenv().Stage)
+            end
+            
+            if promptPart then
+                proximityPrompt = promptPart:FindFirstChildWhichIsA("ProximityPrompt")
+                
+                local targetPos = promptPart.WorldCFrame.Position
+                getgenv().TeleLoop = true
+                
+                -- Only create platform if using teleport mode
+                local platform
+                if not getgenv().Walk then
+                    local platPos = promptPart.WorldCFrame.Position - Vector3.new(0, 20, 0)
+                    platform = Instance.new("Part")
+                    platform.Name = "dgdfghrthhfgplatform"
+                    platform.Shape = Enum.PartType.Block
+                    platform.Size = Vector3.new(10, 1, 10)
+                    platform.Color = Color3.fromRGB(0, 255, 0)
+                    platform.Material = Enum.Material.Neon
+                    platform.CanCollide = true
+                    platform.CFrame = CFrame.new(platPos)
+                    platform.Transparency = 0.3
+                    platform.Parent = workspace
+                    task.wait(1)
+                    print("created platform for " .. eventStage)
+                end
+                
+                if getgenv().Walk == true then
+                    -- WALK MODE
+                    local char = player.Character
+                    if char then
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid:MoveTo(targetPos)
+                            print("Walking to " .. eventStage .. " gamepad...")
+                            
+                            local walkTimeout = tick() + 120
+                            repeat
+                                task.wait(0.1)
+                                char = player.Character
+                                if not char then break end
+                                local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                                if humanoidRoot then
+                                    local distance = (humanoidRoot.Position - targetPos).Magnitude
+                                    if distance <= proximityThreshold then
+                                        print("Reached " .. eventStage .. " gamepad! Distance: " .. tostring(distance))
+                                        getgenv().TeleLoop = false
+                                        break
+                                    end
+                                    if humanoid:GetState() == Enum.HumanoidStateType.Running or humanoid:GetState() == Enum.HumanoidStateType.Landed then
+                                        humanoid:MoveTo(targetPos)
+                                    end
+                                end
+                                if tick() > walkTimeout then
+                                    warn("Walk timeout!")
+                                    break
+                                end
+                            until false
+                        end
+                    end
+                else
+                    -- TELEPORT MODE
+                    while getgenv().TeleLoop do
+                        task.wait()
+                        local char = player.Character
+                        if not char then continue end
+                        local humanoidRoot = char:FindFirstChild("HumanoidRootPart")
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if not humanoidRoot or not humanoid then continue end
+                        
+                        local distance = (humanoidRoot.Position - targetPos).Magnitude
+                        if distance <= proximityThreshold then
+                            getgenv().TeleLoop = false
+                            print("Teleport loop broken at " .. eventStage .. " gamepad!")
+                            break
+                        else
+                            humanoidRoot.Velocity = Vector3.new(0, 0, 0)
+                            humanoidRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+                            humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+                            
+                            task.spawn(function()
+                                humanoidRoot.CFrame = CFrame.new(targetPos)
+                                task.wait()
+                            end)
+                        end
+                    end
+                end
+                
+                task.wait(1)
+                
+                if proximityPrompt then
+                    proximityPrompt.MaxActivationDistance = math.huge
+                    proximityPrompt.HoldDuration = 0
+                    fireproximityprompt(proximityPrompt)
+                    warn("Prompt fired for: " .. eventStage)
+                end
+                
+                task.wait()
+                
+                local gamePadDir = promptPart.Parent:FindFirstChild("GamePad")
+                
+                if gamePadDir then
+                    pcall(function()
+                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        if setCapacityRemote then
+                            setCapacityRemote:InvokeServer(1)
+                            print("set capacity - 1st call")
+                        end
+                    end)
+
+                    task.wait()
+
+                    pcall(function()
+                        local setCapacityRemote = gamePadDir:FindFirstChild("RF") and gamePadDir.RF:FindFirstChild("setCapacity")
+                        if setCapacityRemote then
+                            setCapacityRemote:InvokeServer(1)
+                            print("set capacity - 2nd call")
+                        end
+                    end)
+
+                    task.wait(0.25)
+
+                    pcall(function()
+                        local startRemote = gamePadDir:FindFirstChild("RE") and gamePadDir.RE:FindFirstChild("Start")
+                        if startRemote then
+                            startRemote:FireServer()
+                            print("started " .. eventStage)
+                        end
+                    end)
+                else
+                    warn("Could not find GamePad for " .. eventStage)
+                end
+            else
+                warn("Could not find gamepad prompt for " .. eventStage)
+            end
+        else
+            -- REGULAR PURGE DOOR EVENTS
+            -- Get open purge doors
+            local openDoors = getOpenPurgeDoors()
         
         if #openDoors == 0 then
             warn("No purge doors are currently open!")
@@ -753,6 +973,7 @@ if getgenv().Mode == "Event" or getgenv().Mode == "Garden" then
                 end
             else
                 warn("Loadout check failed or prompt not found for " .. targetDoor.name)
+            end
             end
         end
     end
