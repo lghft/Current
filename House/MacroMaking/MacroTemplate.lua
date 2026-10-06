@@ -30,6 +30,7 @@ local Lighting = Services.Lighting
 local Inventory = require(ReplicatedStorage.Modules.Inventory)
 local TowerDatabase = require(ReplicatedStorage.Databases.Items.Tower)
 local EquippingModule = require(ReplicatedStorage.Modules.Equipping)
+local Jecs = require(ReplicatedStorage.Packages.Jecs)
 
 getgenv().Ability = false
 getgenv().Replay = true
@@ -824,10 +825,68 @@ local function ensureFpsOverlay()
             return lbl
         end
 
-        makeInfoLabel("Wave",   1, "Wave: -/-",                     Palette.Accent)
+                makeInfoLabel("Wave",   1, "Wave: -/-",                     Palette.Accent)
         makeInfoLabel("Cash",   2, "Cash: $0",                      Palette.Success)
         makeInfoLabel("Step",   3, "Step: " .. currentStepText,     Palette.TextPrimary)
         makeInfoLabel("Action", 4, "Action: " .. currentActionText, Palette.Warning)
+        
+        -- Boss Tracking Panel (Top Right)
+        local BossPanel = Instance.new("Frame")
+        BossPanel.Name = "BossPanel"
+        BossPanel.Size = UDim2.new(0, 280, 0, 0)
+        BossPanel.AutomaticSize = Enum.AutomaticSize.Y
+        BossPanel.Position = UDim2.new(1, -292, 0, 12)
+        BossPanel.AnchorPoint = Vector2.new(1, 0)
+        BossPanel.BackgroundColor3 = Palette.Panel
+        BossPanel.BorderSizePixel = 0
+        BossPanel.ZIndex = 2
+        BossPanel.Parent = Cover
+        corner(8, BossPanel)
+
+        local BossStroke = Instance.new("UIStroke")
+        BossStroke.Color = Palette.Accent
+        BossStroke.Thickness = 1.5
+        BossStroke.Transparency = 0.3
+        BossStroke.Parent = BossPanel
+
+        local BossPadding = Instance.new("UIPadding")
+        BossPadding.PaddingTop = UDim.new(0, 8)
+        BossPadding.PaddingBottom = UDim.new(0, 8)
+        BossPadding.PaddingLeft = UDim.new(0, 10)
+        BossPadding.PaddingRight = UDim.new(0, 10)
+        BossPadding.Parent = BossPanel
+
+        local BossLayout = Instance.new("UIListLayout")
+        BossLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        BossLayout.Padding = UDim.new(0, 4)
+        BossLayout.Parent = BossPanel
+
+        local function makeBossLabel(key, order, text, color)
+            local lbl = Instance.new("TextLabel")
+            lbl.Name = key
+            lbl.LayoutOrder = order
+            lbl.Size = UDim2.new(1, 0, 0, 16)
+            lbl.AutomaticSize = Enum.AutomaticSize.Y
+            lbl.BackgroundTransparency = 1
+            lbl.Font = Enum.Font.GothamMedium
+            lbl.TextSize = 12
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.TextYAlignment = Enum.TextYAlignment.Top
+            lbl.TextWrapped = true
+            lbl.TextColor3 = color
+            lbl.Text = text
+            lbl.ZIndex = 3
+            lbl.Parent = BossPanel
+            OverlayLabels[key] = lbl
+            return lbl
+        end
+
+        makeBossLabel("BossTitle", 0, "BOSS TRACKER", Palette.Danger)
+        makeBossLabel("BossName", 1, "Boss: None", Palette.DangerLight)
+        makeBossLabel("BossHealth", 2, "HP: 0/0", Palette.Warning)
+        makeBossLabel("BossPos", 3, "Pos: (0, 0, 0)", Palette.TextSecond)
+        makeBossLabel("BossGoal", 4, "Goal: Unknown", Palette.Success)
+        makeBossLabel("BossProgress", 5, "Progress: 0%", Palette.Accent)
     end)
     
     if not success then
@@ -1737,6 +1796,215 @@ local function autoPetrifyBreak()
     Workspace.DescendantAdded:Connect(autoBreakout)
 end
 
+-- ===== BOSS TRACKING FUNCTIONS =====
+
+local function extractCoords(v)
+    if not v then return 0, 0, nil end
+    local x = v.x or v.X or (typeof(v) == "Vector3" and v.X) or 0
+    local y = v.y or v.Y or (typeof(v) == "Vector3" and v.Y) or 0
+    local z = v.z or v.Z or (typeof(v) == "Vector3" and v.Z) or nil
+    return x, y, z
+end
+
+local function getBossInfo()
+    local ok, result = pcall(function()
+        local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not PlayerGui then return nil end
+        
+        local path = {"MainHud", "Hud", "RoundHud", "Hud", "Inner", "BottomCentre", "Boss"}
+        local current = PlayerGui
+        
+        for _, name in ipairs(path) do
+            current = current:FindFirstChild(name)
+            if not current then return nil end
+        end
+        
+        if current:IsA("TextLabel") then
+            local bossText = tostring(current.Text)
+            local cleaned = bossText:gsub("<[^>]->", "")
+            
+            local name, health, maxHealth = cleaned:match("(.+)%s*%[(%d+)/(%d+)%]")
+            if name then
+                return {
+                    name = name:match("^%s*(.-)%s*$"),
+                    health = tonumber(health) or 0,
+                    maxHealth = tonumber(maxHealth) or 100,
+                    rawText = cleaned
+                }
+            end
+        end
+        return nil
+    end)
+    
+    return ok and result or nil
+end
+
+local function getBossProgress()
+    local bossInfo = getBossInfo()
+    if not bossInfo then return 0 end
+    
+    local progress = (bossInfo.health / bossInfo.maxHealth) * 100
+    return math.clamp(progress, 0, 100)
+end
+
+local function getBossGoalDistance()
+    local ok, distance = pcall(function()
+        local Entities = require(ReplicatedStorage.Modules.Entities)
+        local ct = require(ReplicatedStorage.Modules.Entities.ct)
+        
+        local world = Entities.world
+        if not world then return 0 end
+        
+        local enemyQuery = world:query(ct.Enemy, ct.Position):cached()
+        
+        for id, _, pos in enemyQuery do
+            local config = world:get(id, ct.Config)
+            local isFinalBoss = config and config.final_boss or false
+            
+            if isFinalBoss then
+                local pathTarget = world:target(id, ct.FollowsPath)
+                local pathTable = pathTarget and world:get(pathTarget, ct.Path) or nil
+                
+                if pathTable and #pathTable > 0 then
+                    local followData = world:get(id, Jecs.pair(ct.FollowsPath, pathTarget))
+                    local pathIndex = followData and followData.pathIndex or 1
+                    
+                    local totalPercent = (pathIndex / #pathTable) * 100
+                    return math.clamp(totalPercent, 0, 100)
+                end
+                
+                return 0
+            end
+        end
+        return 0
+    end)
+    
+    return ok and distance or 0
+end
+
+local function getBossTarget()
+    local ok, target = pcall(function()
+        local Entities = require(ReplicatedStorage.Modules.Entities)
+        local ct = require(ReplicatedStorage.Modules.Entities.ct)
+        
+        local world = Entities.world
+        if not world then return "Unknown" end
+        
+        local enemyQuery = world:query(ct.Enemy, ct.Position):cached()
+        
+        for id, _, pos in enemyQuery do
+            local config = world:get(id, ct.Config)
+            local isFinalBoss = config and config.final_boss or false
+            
+            if isFinalBoss then
+                local pathTarget = world:target(id, ct.FollowsPath)
+                local pathTable = pathTarget and world:get(pathTarget, ct.Path) or nil
+                
+                if pathTable and #pathTable > 0 then
+                    local finalNode = pathTable[#pathTable]
+                    local fPos = finalNode.position or finalNode
+                    local goalX, _, _ = extractCoords(fPos)
+                    
+                    if goalX < 9980 then
+                        return "Left"
+                    elseif goalX > 10020 then
+                        return "Right"
+                    else
+                        return "Middle"
+                    end
+                end
+            end
+        end
+        return "Unknown"
+    end)
+    
+    return ok and target or "Unknown"
+end
+
+local function toggleSkip(enabled)
+    local ok, err = pcall(function()
+        local Event = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.UpdateSetting
+        if Event then
+            Event:FireServer("AutoSkip", enabled or false)
+            Notify("print", "[Toggle Skip] AutoSkip set to: " .. tostring(enabled))
+            return true
+        end
+        return false
+    end)
+    
+    if not ok then
+        Notify("warn", "[Toggle Skip] Error: " .. tostring(err))
+        return false
+    end
+    return true
+end
+
+local function placeAllTowers(waitTime, position)
+    waitTime = waitTime or 0.1
+    position = position or CFrame.new(10000, -14, 100)
+    
+    Notify("print", "[Place All] Placing " .. tostring(table.getn(hotbarData)) .. " tower types at position")
+    
+    for slotIndex, _ in pairs(hotbarData) do
+        placeTower(slotIndex, position, waitTime)
+    end
+    
+    Notify("print", "[Place All] Tower placement complete!")
+end
+
+local function autoUpgradeAll(interval, maxLevel)
+    interval = interval or 0.1
+    maxLevel = maxLevel or 5
+    
+    local towersQueued = 0
+    for towerIndex = 1, #placedTowersByIndex do
+        if placedTowersByIndex[towerIndex] and not soldTowers[towerIndex] then
+            autoUpgradeTower(towerIndex, true, interval, maxLevel)
+            towersQueued = towersQueued + 1
+        end
+    end
+    
+    Notify("print", "[Auto Upgrade All] Queued " .. tostring(towersQueued) .. " towers for upgrade (Max Level: " .. tostring(maxLevel) .. ")")
+end
+
+local function manageBossThreat()
+    local function checkAndReact()
+        local distance = getBossGoalDistance()
+        local target = getBossTarget()
+        local bossInfo = getBossInfo()
+        
+        if not bossInfo then return end
+        
+        UpdateAction(string.format("Boss: %s | Distance: %.1f%% | Target: %s", 
+            bossInfo.name, distance, target))
+        
+        if distance >= 60 then
+            Notify("warn", "[Boss Threat] Boss is " .. string.format("%.1f", distance) .. "% to goal (" .. target .. ")")
+            
+            if target == "Left" then
+                Notify("print", "[Boss Response] Reacting to LEFT threat")
+                sellAllTowers(0.1)
+                placeAllTowers(0.1, CFrame.new(10024, -14, 153))
+                autoUpgradeAll(0.1, 5)
+                
+            elseif target == "Middle" then
+                Notify("print", "[Boss Response] Reacting to MIDDLE threat")
+                sellAllTowers(0.1)
+                placeAllTowers(0.1, CFrame.new(9984, -14, 154))
+                autoUpgradeAll(0.1, 5)
+                
+            elseif target == "Right" then
+                Notify("print", "[Boss Response] Reacting to RIGHT threat")
+                sellAllTowers(0.1)
+                placeAllTowers(0.1, CFrame.new(9966, -14, 132))
+                autoUpgradeAll(0.1, 5)
+            end
+        end
+    end
+    
+    return checkAndReact
+end
+
 local function Macro()
     currentMatchId = currentMatchId + 1
     table.clear(placedTowersByIndex)
@@ -1966,35 +2234,49 @@ local function Macro()
         spd(2)
         Notify("print", "[Wave 1]")
     end
-    local function wv15()
+    local function wv2()
+        Notify("print", "[Wave 2]")
+        waitForUpgrades()
+    end
+    local function wv3()
         Notify("print", "[Wave 15]")
         waitForUpgrades()
     end
-    local function wv18()
-        Notify("print", "[Wave 18]")
+    local function wv8()
+        Notify("print", "[Wave 16]")
         waitForUpgrades()
     end
-    local function wv19()
-        Notify("print", "[Wave 19]")
+    local function wv9()
+        Notify("print", "[Wave 17]")
         waitForUpgrades()
     end
-    local function wv21()
-        Notify("print", "[Wave 21]")
+    local function wv44()
+        Notify("print", "[Wave 44]")
         waitForUpgrades()
-        -- sellTower(3) -- example: sell the 3rd placed tower (index stays valid for all others)
     end
-    local function wv100()
-        Notify("print", "[Wave 100]")
+    local function wv45()
+        Notify("print", "[Wave 45]")
+        --[[
+        local bossReactor = manageBossThreat()
+        
+        task.spawn(function()
+            while isMatchActive and #autoUpgradeQueue > 0 do
+                bossReactor()
+                task.wait(0.5)
+            end
+        end)
+        ]]
         waitForUpgrades()
     end
     
     local waveActions = {
         [1] = wv1,
-        [15] = wv15,
-        [18] = wv18,
-        [19] = wv19,
-        [21] = wv21,
-        [100] = wv100
+        [2] = wv2,
+        [15] = wv3,
+        [16] = wv8,
+        [17] = wv9,
+        [44] = wv44,
+        [45] = wv45
     }
 
     local sortedWaves = {}
@@ -2096,6 +2378,9 @@ local function Macro()
                     task.wait(2)
                     task.spawn(Macro)
                     task.spawn(function()
+                        getgenv().WEBHOOK_URL = ""
+                        getgenv().AUTO_SEND = true
+                        getgenv().DEBUG = false
                         loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/webhook.lua'))()
                     end)
                 else
@@ -2191,6 +2476,26 @@ task.spawn(function()
         end
         if OverlayLabels.Action then
             OverlayLabels.Action.Text = "Action: " .. cachedActionText
+        end
+                if OverlayLabels.BossName then
+            local bossInfo = getBossInfo()
+            if bossInfo then
+                OverlayLabels.BossName.Text = "Boss: " .. tostring(bossInfo.name)
+                OverlayLabels.BossHealth.Text = "HP: " .. formatNumber(bossInfo.health) .. "/" .. formatNumber(bossInfo.maxHealth)
+            else
+                OverlayLabels.BossName.Text = "Boss: None"
+                OverlayLabels.BossHealth.Text = "HP: 0/0"
+            end
+        end
+        
+        if OverlayLabels.BossProgress then
+            local distance = getBossGoalDistance()
+            OverlayLabels.BossProgress.Text = "Progress: " .. string.format("%.1f%%", distance)
+        end
+        
+        if OverlayLabels.BossGoal then
+            local target = getBossTarget()
+            OverlayLabels.BossGoal.Text = "Goal: " .. target
         end
     end
 end)
