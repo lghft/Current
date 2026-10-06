@@ -21,8 +21,8 @@ return Entities.add_system(function(world)
         playerGui.EnemyTrackerGui:Destroy()
     end
 
-    -- State for Bosses-Only filter setting
-    local bossesOnly = false
+    -- State for Bosses-Only filter setting (ENABLED BY DEFAULT)
+    local bossesOnly = true
 
     -- 2. Create ScreenGui Container
     local screenGui = Instance.new("ScreenGui")
@@ -65,11 +65,11 @@ return Entities.add_system(function(world)
     local filterButton = Instance.new("TextButton")
     filterButton.Size = UDim2.new(0, 95, 0, 24)
     filterButton.Position = UDim2.new(1, -132, 0.5, -12)
-    filterButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    filterButton.BackgroundColor3 = Color3.fromRGB(140, 40, 40)
     filterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     filterButton.TextSize = 10
     filterButton.Font = Enum.Font.GothamBold
-    filterButton.Text = "Filter: All"
+    filterButton.Text = "Filter: Bosses"
     filterButton.Parent = headerFrame
 
     local filterCorner = Instance.new("UICorner")
