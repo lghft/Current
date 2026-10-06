@@ -1,6 +1,10 @@
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
+local plr = game.Players.LocalPlayer
+if plr.UserId ~= 1588829513 then
+    return
+end
 task.wait(4)
 local gameId = game.GameId
 repeat task.wait() until gameId == 10463578886 and workspace:WaitForChild("ActiveMap")
@@ -18,6 +22,15 @@ Services = setmetatable({}, {
 	end
 })
 
+getgenv().Ability = false
+getgenv().Replay = true
+getgenv().Fps = true
+getgenv().Debug = false
+getgenv().UpgradeMode = "Sequential"-- Priority or Sequential(Rec*)
+getgenv().Print = false
+getgenv().Garden = true
+getgenv().GardenWave = 276
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -30,15 +43,6 @@ local Lighting = Services.Lighting
 local Inventory = require(ReplicatedStorage.Modules.Inventory)
 local TowerDatabase = require(ReplicatedStorage.Databases.Items.Tower)
 local EquippingModule = require(ReplicatedStorage.Modules.Equipping)
-
-getgenv().Ability = false
-getgenv().Replay = true
-getgenv().Fps = true
-getgenv().Debug = false
-getgenv().UpgradeMode = "Sequential"-- Priority Sequential
-getgenv().Print = false
-getgenv().Garden = true
-getgenv().GardenWave = 50
 
 local hotbarData = {}
 local placedTowersByIndex = {}
@@ -108,19 +112,24 @@ function Logger:Log(text, color)
     if not LogContainer then return end
     local wasAtBottom = stickToBottom
 
-    local LogLabel = Instance.new("TextLabel")
-    LogLabel.Name = "LogEntry"
-    LogLabel.BackgroundTransparency = 1
-    LogLabel.Size = UDim2.new(1, 0, 0, 0)
-    LogLabel.AutomaticSize = Enum.AutomaticSize.Y
-    LogLabel.Font = Enum.Font.Code
-    LogLabel.Text = text
-    LogLabel.TextColor3 = color or Color3.fromRGB(238, 238, 245)
-    LogLabel.TextSize = 12
-    LogLabel.TextXAlignment = Enum.TextXAlignment.Left
-    LogLabel.TextWrapped = true
-    LogLabel.RichText = true
-    LogLabel.Parent = LogContainer
+    local LogLabel
+    local success = pcall(function()
+        LogLabel = Instance.new("TextLabel")
+        LogLabel.Name = "LogEntry"
+        LogLabel.BackgroundTransparency = 1
+        LogLabel.Size = UDim2.new(1, 0, 0, 0)
+        LogLabel.AutomaticSize = Enum.AutomaticSize.Y
+        LogLabel.Font = Enum.Font.Code
+        LogLabel.Text = text
+        LogLabel.TextColor3 = color or Color3.fromRGB(238, 238, 245)
+        LogLabel.TextSize = 12
+        LogLabel.TextXAlignment = Enum.TextXAlignment.Left
+        LogLabel.TextWrapped = true
+        LogLabel.RichText = true
+        LogLabel.Parent = LogContainer
+    end)
+    
+    if not success then return end
 
     local entries = {}
     for _, child in ipairs(LogContainer:GetChildren()) do
@@ -165,9 +174,12 @@ end
 RunService.Heartbeat:Connect(SafeLogUpdate)
 
 local function corner(radius, parent)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius)
-    c.Parent = parent
+    local c
+    local success = pcall(function()
+        c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, radius)
+        c.Parent = parent
+    end)
     return c
 end
 
@@ -197,15 +209,20 @@ local function addClickEffect(button, effectColor)
     button.ClipsDescendants = true
     local existingCorner = button:FindFirstChildOfClass("UICorner")
 
-    local Flash = Instance.new("Frame")
-    Flash.Name = "ClickFlash"
-    Flash.Size = UDim2.new(1, 0, 1, 0)
-    Flash.BackgroundColor3 = effectColor
-    Flash.BackgroundTransparency = 1
-    Flash.BorderSizePixel = 0
-    Flash.ZIndex = button.ZIndex + 1
-    Flash.Parent = button
-    if existingCorner then existingCorner:Clone().Parent = Flash end
+    local Flash
+    local success = pcall(function()
+        Flash = Instance.new("Frame")
+        Flash.Name = "ClickFlash"
+        Flash.Size = UDim2.new(1, 0, 1, 0)
+        Flash.BackgroundColor3 = effectColor
+        Flash.BackgroundTransparency = 1
+        Flash.BorderSizePixel = 0
+        Flash.ZIndex = button.ZIndex + 1
+        Flash.Parent = button
+        if existingCorner then existingCorner:Clone().Parent = Flash end
+    end)
+    
+    if not success or not Flash then return end
 
     button.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -216,28 +233,31 @@ local function addClickEffect(button, effectColor)
             local absPos = button.AbsolutePosition
             local relX, relY = input.Position.X - absPos.X, input.Position.Y - absPos.Y
 
-            local Ring = Instance.new("Frame")
-            Ring.Name = "ClickRing"
-            Ring.AnchorPoint = Vector2.new(0.5, 0.5)
-            Ring.Position = UDim2.new(0, relX, 0, relY)
-            Ring.Size = UDim2.new(0, 10, 0, 10)
-            Ring.BackgroundTransparency = 1
-            Ring.BorderSizePixel = 0
-            Ring.ZIndex = button.ZIndex + 2
-            Ring.Parent = button
-            corner(9999, Ring)
+            local Ring
+            pcall(function()
+                Ring = Instance.new("Frame")
+                Ring.Name = "ClickRing"
+                Ring.AnchorPoint = Vector2.new(0.5, 0.5)
+                Ring.Position = UDim2.new(0, relX, 0, relY)
+                Ring.Size = UDim2.new(0, 10, 0, 10)
+                Ring.BackgroundTransparency = 1
+                Ring.BorderSizePixel = 0
+                Ring.ZIndex = button.ZIndex + 2
+                Ring.Parent = button
+                corner(9999, Ring)
 
-            local RingStroke = Instance.new("UIStroke")
-            RingStroke.Color = effectColor
-            RingStroke.Transparency = 0.3
-            RingStroke.Thickness = 2
-            RingStroke.Parent = Ring
+                local RingStroke = Instance.new("UIStroke")
+                RingStroke.Color = effectColor
+                RingStroke.Transparency = 0.3
+                RingStroke.Thickness = 2
+                RingStroke.Parent = Ring
 
-            local ringTween = TweenService:Create(Ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(0, 60, 0, 60) })
-            local strokeTween = TweenService:Create(RingStroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 })
-            ringTween:Play()
-            strokeTween:Play()
-            ringTween.Completed:Connect(function() Ring:Destroy() end)
+                local ringTween = TweenService:Create(Ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(0, 60, 0, 60) })
+                local strokeTween = TweenService:Create(RingStroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Transparency = 1 })
+                ringTween:Play()
+                strokeTween:Play()
+                ringTween.Completed:Connect(function() Ring:Destroy() end)
+            end)
         end
     end)
 end
@@ -246,399 +266,416 @@ if CoreGui:FindFirstChild("MacroDebugGui") then
     CoreGui:FindFirstChild("MacroDebugGui"):Destroy() 
 end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MacroDebugGui"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 2000
-ScreenGui.Parent = CoreGui
-ScreenGui.Enabled = getgenv().Debug
+local ScreenGui
+local success = pcall(function()
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "MacroDebugGui"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.DisplayOrder = 2000
+    ScreenGui.Parent = CoreGui
+    ScreenGui.Enabled = getgenv().Debug
+end)
 
-local RestoreBtn = Instance.new("TextButton")
-RestoreBtn.Name = "RestoreButton"
-RestoreBtn.Size = UDim2.new(0, 46, 0, 46)
-RestoreBtn.Position = UDim2.new(1, -66, 0.5, -23)
-RestoreBtn.BackgroundColor3 = Palette.Panel
-RestoreBtn.AutoButtonColor = false
-RestoreBtn.Text = "DBG"
-RestoreBtn.TextSize = 20
-RestoreBtn.Font = Enum.Font.GothamMedium
-RestoreBtn.Visible = false
-RestoreBtn.Parent = ScreenGui
-corner(23, RestoreBtn)
-local RestoreStroke = Instance.new("UIStroke")
-RestoreStroke.Color = Palette.Accent
-RestoreStroke.Thickness = 1.5
-RestoreStroke.Transparency = 0.4
-RestoreStroke.Parent = RestoreBtn
-addClickEffect(RestoreBtn, Palette.Accent)
+if not success or not ScreenGui then
+    warn("Failed to create ScreenGui - Instance.new restricted by executor")
+end
+
+local RestoreBtn
+pcall(function()
+    RestoreBtn = Instance.new("TextButton")
+    RestoreBtn.Name = "RestoreButton"
+    RestoreBtn.Size = UDim2.new(0, 46, 0, 46)
+    RestoreBtn.Position = UDim2.new(1, -66, 0.5, -23)
+    RestoreBtn.BackgroundColor3 = Palette.Panel
+    RestoreBtn.AutoButtonColor = false
+    RestoreBtn.Text = "DBG"
+    RestoreBtn.TextSize = 20
+    RestoreBtn.Font = Enum.Font.GothamMedium
+    RestoreBtn.Visible = false
+    RestoreBtn.Parent = ScreenGui
+    corner(23, RestoreBtn)
+    local RestoreStroke = Instance.new("UIStroke")
+    RestoreStroke.Color = Palette.Accent
+    RestoreStroke.Thickness = 1.5
+    RestoreStroke.Transparency = 0.4
+    RestoreStroke.Parent = RestoreBtn
+    addClickEffect(RestoreBtn, Palette.Accent)
+end)
 
 local FULL_SIZE = UDim2.new(0, 400, 0, 510)
 local COLLAPSED_SIZE = UDim2.new(0, 400, 0, 40)
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainWindow"
-MainFrame.Size = FULL_SIZE
-MainFrame.Position = UDim2.new(1, -420, 0.5, -250)
-MainFrame.BackgroundColor3 = Palette.Background
-MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
-MainFrame.Parent = ScreenGui
-corner(10, MainFrame)
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Palette.Stroke
-MainStroke.Thickness = 1
-MainStroke.Parent = MainFrame
-
-local TitleBar = Instance.new("Frame")
-TitleBar.Name = "TitleBar"
-TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = Palette.Panel
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = MainFrame
-corner(10, TitleBar)
-
-local TitleBarMask = Instance.new("Frame")
-TitleBarMask.BackgroundColor3 = Palette.Panel
-TitleBarMask.BorderSizePixel = 0
-TitleBarMask.Size = UDim2.new(1, 0, 0, 10)
-TitleBarMask.Position = UDim2.new(0, 0, 1, -10)
-TitleBarMask.Parent = TitleBar
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -140, 1, 0)
-Title.Position = UDim2.new(0, 15, 0, 0)
-Title.Text = "Macro Debug & Tracer"
-Title.TextColor3 = Palette.TextPrimary
-Title.BackgroundTransparency = 1
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-Title.Parent = TitleBar
-
-local ControlsFrame = Instance.new("Frame")
-ControlsFrame.Name = "Controls"
-ControlsFrame.Size = UDim2.new(0, 114, 0, 32)
-ControlsFrame.AnchorPoint = Vector2.new(1, 0.5)
-ControlsFrame.Position = UDim2.new(1, -8, 0.5, 0)
-ControlsFrame.BackgroundTransparency = 1
-ControlsFrame.Parent = TitleBar
-local ControlsLayout = Instance.new("UIListLayout")
-ControlsLayout.FillDirection = Enum.FillDirection.Horizontal
-ControlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-ControlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-ControlsLayout.Padding = UDim.new(0, 4)
-ControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ControlsLayout.Parent = ControlsFrame
-
-local function makeIconButton(iconText, layoutOrder)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 34, 0, 32)
-    btn.LayoutOrder = layoutOrder
-    btn.Text = iconText
-    btn.TextColor3 = Palette.TextSecond
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 22
-    btn.AutoButtonColor = false
-    btn.Parent = ControlsFrame
-    corner(6, btn)
-    return btn
-end
-
-local MinimizeBtn = makeIconButton("—", 1)
-hoverHighlight(MinimizeBtn, Palette.PanelAlt)
-addClickEffect(MinimizeBtn, Palette.TextPrimary)
-
-local CollapseBtn = makeIconButton("v", 2)
-hoverHighlight(CollapseBtn, Palette.PanelAlt)
-addClickEffect(CollapseBtn, Palette.TextPrimary)
-
-local CloseBtn = makeIconButton("X", 3)
-CloseBtn.TextColor3 = Palette.Danger
-hoverHighlight(CloseBtn, Color3.fromRGB(60, 32, 32))
-addClickEffect(CloseBtn, Palette.Danger)
-
-local Body = Instance.new("Frame")
-Body.Name = "Body"
-Body.Size = UDim2.new(1, -24, 1, -60)
-Body.Position = UDim2.new(0, 12, 0, 50)
-Body.BackgroundTransparency = 1
-Body.Parent = MainFrame
-
-local StatusCard = Instance.new("Frame")
-StatusCard.Size = UDim2.new(1, 0, 0, 42)
-StatusCard.BackgroundColor3 = Palette.Panel
-StatusCard.BorderSizePixel = 0
-StatusCard.Parent = Body
-corner(8, StatusCard)
-
-local StepLabel = Instance.new("TextLabel")
-StepLabel.Size = UDim2.new(1, -20, 1, 0)
-StepLabel.Position = UDim2.new(0, 10, 0, 0)
-StepLabel.Text = "Current Step: Initializing..."
-StepLabel.TextColor3 = Palette.TextPrimary
-StepLabel.BackgroundTransparency = 1
-StepLabel.TextXAlignment = Enum.TextXAlignment.Left
-StepLabel.Font = Enum.Font.Gotham
-StepLabel.TextSize = 12
-StepLabel.Parent = StatusCard
-
-LogContainer = Instance.new("ScrollingFrame")
-LogContainer.Name = "LogScroll"
-LogContainer.Size = UDim2.new(1, 0, 1, -120)
-LogContainer.Position = UDim2.new(0, 0, 0, 50)
-LogContainer.BackgroundColor3 = Palette.Panel
-LogContainer.BorderSizePixel = 0
-LogContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-LogContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
-LogContainer.ScrollingDirection = Enum.ScrollingDirection.Y
-LogContainer.ScrollBarThickness = 6
-LogContainer.ScrollBarImageColor3 = Palette.Accent
-LogContainer.Parent = Body
-corner(8, LogContainer)
-
-local LogListLayout = Instance.new("UIListLayout")
-LogListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-LogListLayout.Padding = UDim.new(0, 2)
-LogListLayout.Parent = LogContainer
-
-local LogPadding = Instance.new("UIPadding")
-LogPadding.PaddingLeft = UDim.new(0, 10)
-LogPadding.PaddingRight = UDim.new(0, 15)
-LogPadding.PaddingTop = UDim.new(0, 6)
-LogPadding.Parent = LogContainer
-
-LogContainer:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-    if isAutoScrolling then return end
-    stickToBottom = isLogScrolledToBottom()
+local MainFrame
+local StepLabel -- forward declared so UpdateMacroStep can reach it
+pcall(function()
+    MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainWindow"
+    MainFrame.Size = FULL_SIZE
+    MainFrame.Position = UDim2.new(1, -420, 0.5, -250)
+    MainFrame.BackgroundColor3 = Palette.Background
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = ScreenGui
+    corner(10, MainFrame)
+    local MainStroke = Instance.new("UIStroke")
+    MainStroke.Color = Palette.Stroke
+    MainStroke.Thickness = 1
+    MainStroke.Parent = MainFrame
 end)
 
-local LogActionBar = Instance.new("Frame")
-LogActionBar.Size = UDim2.new(1, 0, 0, 28)
-LogActionBar.Position = UDim2.new(0, 0, 1, -34)
-LogActionBar.BackgroundTransparency = 1
-LogActionBar.Parent = Body
+local TitleBar
+pcall(function()
+    TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    TitleBar.BackgroundColor3 = Palette.Panel
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    corner(10, TitleBar)
 
-local function createActionButton(name, text, position, size, color)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = size
-    btn.Position = position
-    btn.BackgroundColor3 = Palette.Panel
-    btn.TextColor3 = color or Palette.TextPrimary
-    btn.Text = text
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 11
-    btn.AutoButtonColor = false
-    btn.Parent = LogActionBar
-    corner(6, btn)
-    hoverColorSwap(btn, Palette.Panel, Palette.PanelLight)
-    addClickEffect(btn, color or Palette.Accent)
-    return btn
-end
+    local TitleBarMask = Instance.new("Frame")
+    TitleBarMask.BackgroundColor3 = Palette.Panel
+    TitleBarMask.BorderSizePixel = 0
+    TitleBarMask.Size = UDim2.new(1, 0, 0, 10)
+    TitleBarMask.Position = UDim2.new(0, 0, 1, -10)
+    TitleBarMask.Parent = TitleBar
 
-local ClearLogsBtn = createActionButton("ClearLogsButton", "Clear Logs", UDim2.new(0, 0, 1, -34), UDim2.new(0.5, -4, 0, 34), Palette.DangerLight)
-local ScrollBottomBtn = createActionButton("ScrollBottomButton", "↓ Bottom", UDim2.new(0.5, 4, 1, -34), UDim2.new(0.5, -4, 0, 34), Palette.Accent)
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -140, 1, 0)
+    Title.Position = UDim2.new(0, 15, 0, 0)
+    Title.Text = "Macro Debug & Tracer"
+    Title.TextColor3 = Palette.TextPrimary
+    Title.BackgroundTransparency = 1
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 14
+    Title.Parent = TitleBar
 
-ClearLogsBtn.MouseButton1Click:Connect(function()
-    Logger:Clear()
-end)
+    local ControlsFrame = Instance.new("Frame")
+    ControlsFrame.Name = "Controls"
+    ControlsFrame.Size = UDim2.new(0, 114, 0, 32)
+    ControlsFrame.AnchorPoint = Vector2.new(1, 0.5)
+    ControlsFrame.Position = UDim2.new(1, -8, 0.5, 0)
+    ControlsFrame.BackgroundTransparency = 1
+    ControlsFrame.Parent = TitleBar
+    local ControlsLayout = Instance.new("UIListLayout")
+    ControlsLayout.FillDirection = Enum.FillDirection.Horizontal
+    ControlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    ControlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    ControlsLayout.Padding = UDim.new(0, 4)
+    ControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ControlsLayout.Parent = ControlsFrame
 
-ScrollBottomBtn.MouseButton1Click:Connect(function()
-    stickToBottom = true
-    scrollLogToBottom()
-end)
-
-local dragging = false
-local dragStartInput, dragStartPos
-
-TitleBar.Active = true
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStartInput = input.Position
-        dragStartPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+    local function makeIconButton(iconText, layoutOrder)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 34, 0, 32)
+        btn.LayoutOrder = layoutOrder
+        btn.Text = iconText
+        btn.TextColor3 = Palette.TextSecond
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 22
+        btn.AutoButtonColor = false
+        btn.Parent = ControlsFrame
+        corner(6, btn)
+        return btn
     end
-end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartInput
-        MainFrame.Position = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
-    end
-end)
+    local MinimizeBtn = makeIconButton("—", 1)
+    hoverHighlight(MinimizeBtn, Palette.PanelAlt)
+    addClickEffect(MinimizeBtn, Palette.TextPrimary)
 
-local MinimizeTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-local RestoreTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-local savedPosition = MainFrame.Position
-local savedSize = MainFrame.Size
-local minimizeAnimating = false
+    local CollapseBtn = makeIconButton("v", 2)
+    hoverHighlight(CollapseBtn, Palette.PanelAlt)
+    addClickEffect(CollapseBtn, Palette.TextPrimary)
 
-MinimizeBtn.MouseButton1Click:Connect(function()
-    if minimizeAnimating then return end
-    minimizeAnimating = true
-    savedPosition = MainFrame.Position
-    savedSize = MainFrame.Size
-    local targetPos = UDim2.new(RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + RestoreBtn.Size.X.Offset / 2, RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + RestoreBtn.Size.Y.Offset / 2)
-    local minimizeTween = TweenService:Create(MainFrame, MinimizeTweenInfo, {Size = UDim2.new(0, 0, 0, 0), Position = targetPos, BackgroundTransparency = 1})
-    TweenService:Create(MainStroke, MinimizeTweenInfo, {Transparency = 1}):Play()
-    minimizeTween:Play()
-    minimizeTween.Completed:Connect(function()
-        MainFrame.Visible = false
-        MainFrame.Size = savedSize
-        MainFrame.Position = savedPosition
-        MainFrame.BackgroundTransparency = 0
-        MainStroke.Transparency = 0
-        RestoreBtn.Visible = true
-        RestoreBtn.Size = UDim2.new(0, 0, 0, 0)
-        TweenService:Create(RestoreBtn, RestoreTweenInfo, {Size = UDim2.new(0, 46, 0, 46)}):Play()
-        minimizeAnimating = false
+    local CloseBtn = makeIconButton("X", 3)
+    CloseBtn.TextColor3 = Palette.Danger
+    hoverHighlight(CloseBtn, Color3.fromRGB(60, 32, 32))
+    addClickEffect(CloseBtn, Palette.Danger)
+
+    local Body = Instance.new("Frame")
+    Body.Name = "Body"
+    Body.Size = UDim2.new(1, -24, 1, -60)
+    Body.Position = UDim2.new(0, 12, 0, 50)
+    Body.BackgroundTransparency = 1
+    Body.Parent = MainFrame
+
+    local StatusCard = Instance.new("Frame")
+    StatusCard.Size = UDim2.new(1, 0, 0, 42)
+    StatusCard.BackgroundColor3 = Palette.Panel
+    StatusCard.BorderSizePixel = 0
+    StatusCard.Parent = Body
+    corner(8, StatusCard)
+
+    StepLabel = Instance.new("TextLabel")
+    StepLabel.Size = UDim2.new(1, -20, 1, 0)
+    StepLabel.Position = UDim2.new(0, 10, 0, 0)
+    StepLabel.Text = "Current Step: Initializing..."
+    StepLabel.TextColor3 = Palette.TextPrimary
+    StepLabel.BackgroundTransparency = 1
+    StepLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StepLabel.Font = Enum.Font.Gotham
+    StepLabel.TextSize = 12
+    StepLabel.Parent = StatusCard
+
+    LogContainer = Instance.new("ScrollingFrame")
+    LogContainer.Name = "LogScroll"
+    LogContainer.Size = UDim2.new(1, 0, 1, -120)
+    LogContainer.Position = UDim2.new(0, 0, 0, 50)
+    LogContainer.BackgroundColor3 = Palette.Panel
+    LogContainer.BorderSizePixel = 0
+    LogContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+    LogContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    LogContainer.ScrollingDirection = Enum.ScrollingDirection.Y
+    LogContainer.ScrollBarThickness = 6
+    LogContainer.ScrollBarImageColor3 = Palette.Accent
+    LogContainer.Parent = Body
+    corner(8, LogContainer)
+
+    local LogListLayout = Instance.new("UIListLayout")
+    LogListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    LogListLayout.Padding = UDim.new(0, 2)
+    LogListLayout.Parent = LogContainer
+
+    local LogPadding = Instance.new("UIPadding")
+    LogPadding.PaddingLeft = UDim.new(0, 10)
+    LogPadding.PaddingRight = UDim.new(0, 15)
+    LogPadding.PaddingTop = UDim.new(0, 6)
+    LogPadding.Parent = LogContainer
+
+    LogContainer:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+        if isAutoScrolling then return end
+        stickToBottom = isLogScrolledToBottom()
     end)
-end)
 
-RestoreBtn.MouseButton1Click:Connect(function()
-    if minimizeAnimating then return end
-    minimizeAnimating = true
-    local shrinkTween = TweenService:Create(RestoreBtn, MinimizeTweenInfo, {Size = UDim2.new(0, 0, 0, 0)})
-    shrinkTween:Play()
-    local startPos = UDim2.new(RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + (RestoreBtn.Size.X.Offset / 2), RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + (RestoreBtn.Size.Y.Offset / 2))
-    MainFrame.Visible = true
-    MainFrame.Size = UDim2.new(0, 0, 0, 0)
-    MainFrame.Position = startPos
-    MainFrame.BackgroundTransparency = 1
-    MainStroke.Transparency = 1
-    TweenService:Create(MainFrame, RestoreTweenInfo, {Size = savedSize, Position = savedPosition, BackgroundTransparency = 0}):Play()
-    TweenService:Create(MainStroke, RestoreTweenInfo, {Transparency = 0}):Play()
-    shrinkTween.Completed:Connect(function()
-        RestoreBtn.Visible = false
-        RestoreBtn.Size = UDim2.new(0, 46, 0, 46)
-        minimizeAnimating = false
-    end)
-end)
+    local LogActionBar = Instance.new("Frame")
+    LogActionBar.Size = UDim2.new(1, 0, 0, 28)
+    LogActionBar.Position = UDim2.new(0, 0, 1, -34)
+    LogActionBar.BackgroundTransparency = 1
+    LogActionBar.Parent = Body
 
-local isCollapsed = false
-local bodyElements = {Body}
-local TweenInf = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-
-CollapseBtn.MouseButton1Click:Connect(function()
-    isCollapsed = not isCollapsed
-    if isCollapsed then
-        CollapseBtn.Text = ">"
-        for _, element in ipairs(bodyElements) do element.Visible = false end
-        TitleBarMask.Visible = false
-        TweenService:Create(MainFrame, TweenInf, {Size = COLLAPSED_SIZE}):Play()
-    else
-        CollapseBtn.Text = "v"
-        local expandTween = TweenService:Create(MainFrame, TweenInf, {Size = FULL_SIZE})
-        expandTween:Play()
-        expandTween.Completed:Connect(function()
-            if not isCollapsed then
-                for _, element in ipairs(bodyElements) do element.Visible = true end
-                TitleBarMask.Visible = true
-            end
-        end)
+    local function createActionButton(name, text, position, size, color)
+        local btn = Instance.new("TextButton")
+        btn.Name = name
+        btn.Size = size
+        btn.Position = position
+        btn.BackgroundColor3 = Palette.Panel
+        btn.TextColor3 = color or Palette.TextPrimary
+        btn.Text = text
+        btn.Font = Enum.Font.GothamMedium
+        btn.TextSize = 11
+        btn.AutoButtonColor = false
+        btn.Parent = LogActionBar
+        corner(6, btn)
+        hoverColorSwap(btn, Palette.Panel, Palette.PanelLight)
+        addClickEffect(btn, color or Palette.Accent)
+        return btn
     end
-end)
 
-local Overlay = Instance.new("Frame")
-Overlay.Name = "Overlay"
-Overlay.Size = UDim2.new(1, 0, 1, 0)
-Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Overlay.BackgroundTransparency = 1
-Overlay.Visible = false
-Overlay.ZIndex = 5
-Overlay.Parent = MainFrame
+    local ClearLogsBtn = createActionButton("ClearLogsButton", "Clear Logs", UDim2.new(0, 0, 1, -34), UDim2.new(0.5, -4, 0, 34), Palette.DangerLight)
+    local ScrollBottomBtn = createActionButton("ScrollBottomButton", "↓ Bottom", UDim2.new(0.5, 4, 1, -34), UDim2.new(0.5, -4, 0, 34), Palette.Accent)
 
-local UnloadMenu = Instance.new("Frame")
-UnloadMenu.Name = "UnloadMenu"
-UnloadMenu.Size = UDim2.new(0, 0, 0, 0)
-UnloadMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
-UnloadMenu.AnchorPoint = Vector2.new(0.5, 0.5)
-UnloadMenu.BackgroundColor3 = Palette.Panel
-UnloadMenu.ClipsDescendants = true
-UnloadMenu.Visible = false
-UnloadMenu.ZIndex = 6
-UnloadMenu.Parent = MainFrame
-corner(10, UnloadMenu)
+    ClearLogsBtn.MouseButton1Click:Connect(function()
+        Logger:Clear()
+    end)
 
-local UnloadTitle = Instance.new("TextLabel")
-UnloadTitle.Size = UDim2.new(1, -30, 0, 22)
-UnloadTitle.Position = UDim2.new(0, 15, 0, 14)
-UnloadTitle.Text = "Unload Debug GUI?"
-UnloadTitle.TextColor3 = Palette.TextPrimary
-UnloadTitle.BackgroundTransparency = 1
-UnloadTitle.TextXAlignment = Enum.TextXAlignment.Left
-UnloadTitle.Font = Enum.Font.GothamBold
-UnloadTitle.TextSize = 14
-UnloadTitle.ZIndex = 6
-UnloadTitle.Parent = UnloadMenu
+    ScrollBottomBtn.MouseButton1Click:Connect(function()
+        stickToBottom = true
+        scrollLogToBottom()
+    end)
 
-local UnloadText = Instance.new("TextLabel")
-UnloadText.Size = UDim2.new(1, -30, 0, 18)
-UnloadText.Position = UDim2.new(0, 15, 0, 38)
-UnloadText.Text = "This action cannot be undone."
-UnloadText.TextColor3 = Palette.TextSecond
-UnloadText.BackgroundTransparency = 1
-UnloadText.TextXAlignment = Enum.TextXAlignment.Left
-UnloadText.Font = Enum.Font.Gotham
-UnloadText.TextSize = 12
-UnloadText.ZIndex = 6
-UnloadText.Parent = UnloadMenu
+    local dragging = false
+    local dragStartInput, dragStartPos
 
-local CancelBtn = Instance.new("TextButton")
-CancelBtn.Size = UDim2.new(0, 108, 0, 32)
-CancelBtn.Position = UDim2.new(1, -123, 1, -46)
-CancelBtn.BackgroundColor3 = Palette.PanelAlt
-CancelBtn.TextColor3 = Palette.TextPrimary
-CancelBtn.Text = "Cancel"
-CancelBtn.Font = Enum.Font.GothamMedium
-CancelBtn.TextSize = 13
-CancelBtn.AutoButtonColor = false
-CancelBtn.ZIndex = 6
-CancelBtn.Parent = UnloadMenu
-corner(6, CancelBtn)
-hoverColorSwap(CancelBtn, Palette.PanelAlt, Palette.PanelLight)
-addClickEffect(CancelBtn, Palette.TextPrimary)
+    TitleBar.Active = true
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStartInput = input.Position
+            dragStartPos = MainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
 
-local ConfirmBtn = Instance.new("TextButton")
-ConfirmBtn.Size = UDim2.new(0, 108, 0, 32)
-ConfirmBtn.Position = UDim2.new(0, 15, 1, -46)
-ConfirmBtn.BackgroundColor3 = Palette.Danger
-ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ConfirmBtn.Text = "Unload"
-ConfirmBtn.Font = Enum.Font.GothamBold
-ConfirmBtn.TextSize = 13
-ConfirmBtn.AutoButtonColor = false
-ConfirmBtn.ZIndex = 6
-ConfirmBtn.Parent = UnloadMenu
-corner(6, ConfirmBtn)
-hoverColorSwap(ConfirmBtn, Palette.Danger, Color3.fromRGB(150, 40, 40))
-addClickEffect(ConfirmBtn, Color3.fromRGB(255, 255, 255))
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStartInput
+            MainFrame.Position = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
+        end
+    end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    Overlay.Visible = true
-    UnloadMenu.Visible = true
-    TweenService:Create(Overlay, TweenInf, {BackgroundTransparency = 0.4}):Play()
-    TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 246, 0, 118)}):Play()
-end)
+    local MinimizeTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    local RestoreTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    local savedPosition = MainFrame.Position
+    local savedSize = MainFrame.Size
+    local minimizeAnimating = false
 
-CancelBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(Overlay, TweenInf, {BackgroundTransparency = 1}):Play()
-    local tween = TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 0, 0, 0)})
-    tween:Play()
-    tween.Completed:Wait()
-    UnloadMenu.Visible = false
+    MinimizeBtn.MouseButton1Click:Connect(function()
+        if minimizeAnimating then return end
+        minimizeAnimating = true
+        savedPosition = MainFrame.Position
+        savedSize = MainFrame.Size
+        local targetPos = UDim2.new(RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + RestoreBtn.Size.X.Offset / 2, RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + RestoreBtn.Size.Y.Offset / 2)
+        local minimizeTween = TweenService:Create(MainFrame, MinimizeTweenInfo, {Size = UDim2.new(0, 0, 0, 0), Position = targetPos, BackgroundTransparency = 1})
+        TweenService:Create(MainStroke, MinimizeTweenInfo, {Transparency = 1}):Play()
+        minimizeTween:Play()
+        minimizeTween.Completed:Connect(function()
+            MainFrame.Visible = false
+            MainFrame.Size = savedSize
+            MainFrame.Position = savedPosition
+            MainFrame.BackgroundTransparency = 0
+            MainStroke.Transparency = 0
+            RestoreBtn.Visible = true
+            RestoreBtn.Size = UDim2.new(0, 0, 0, 0)
+            TweenService:Create(RestoreBtn, RestoreTweenInfo, {Size = UDim2.new(0, 46, 0, 46)}):Play()
+            minimizeAnimating = false
+        end)
+    end)
+
+    RestoreBtn.MouseButton1Click:Connect(function()
+        if minimizeAnimating then return end
+        minimizeAnimating = true
+        local shrinkTween = TweenService:Create(RestoreBtn, MinimizeTweenInfo, {Size = UDim2.new(0, 0, 0, 0)})
+        shrinkTween:Play()
+        local startPos = UDim2.new(RestoreBtn.Position.X.Scale, RestoreBtn.Position.X.Offset + (RestoreBtn.Size.X.Offset / 2), RestoreBtn.Position.Y.Scale, RestoreBtn.Position.Y.Offset + (RestoreBtn.Size.Y.Offset / 2))
+        MainFrame.Visible = true
+        MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        MainFrame.Position = startPos
+        MainFrame.BackgroundTransparency = 1
+        MainStroke.Transparency = 1
+        TweenService:Create(MainFrame, RestoreTweenInfo, {Size = savedSize, Position = savedPosition, BackgroundTransparency = 0}):Play()
+        TweenService:Create(MainStroke, RestoreTweenInfo, {Transparency = 0}):Play()
+        shrinkTween.Completed:Connect(function()
+            RestoreBtn.Visible = false
+            RestoreBtn.Size = UDim2.new(0, 46, 0, 46)
+            minimizeAnimating = false
+        end)
+    end)
+
+    local isCollapsed = false
+    local bodyElements = {Body}
+    local TweenInf = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+    CollapseBtn.MouseButton1Click:Connect(function()
+        isCollapsed = not isCollapsed
+        if isCollapsed then
+            CollapseBtn.Text = ">"
+            for _, element in ipairs(bodyElements) do element.Visible = false end
+            TitleBarMask.Visible = false
+            TweenService:Create(MainFrame, TweenInf, {Size = COLLAPSED_SIZE}):Play()
+        else
+            CollapseBtn.Text = "v"
+            local expandTween = TweenService:Create(MainFrame, TweenInf, {Size = FULL_SIZE})
+            expandTween:Play()
+            expandTween.Completed:Connect(function()
+                if not isCollapsed then
+                    for _, element in ipairs(bodyElements) do element.Visible = true end
+                    TitleBarMask.Visible = true
+                end
+            end)
+        end
+    end)
+
+    local Overlay = Instance.new("Frame")
+    Overlay.Name = "Overlay"
+    Overlay.Size = UDim2.new(1, 0, 1, 0)
+    Overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Overlay.BackgroundTransparency = 1
     Overlay.Visible = false
-end)
+    Overlay.ZIndex = 5
+    Overlay.Parent = MainFrame
 
-ConfirmBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-    getgenv().Debug = false
+    local UnloadMenu = Instance.new("Frame")
+    UnloadMenu.Name = "UnloadMenu"
+    UnloadMenu.Size = UDim2.new(0, 0, 0, 0)
+    UnloadMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
+    UnloadMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+    UnloadMenu.BackgroundColor3 = Palette.Panel
+    UnloadMenu.ClipsDescendants = true
+    UnloadMenu.Visible = false
+    UnloadMenu.ZIndex = 6
+    UnloadMenu.Parent = MainFrame
+    corner(10, UnloadMenu)
+
+    local UnloadTitle = Instance.new("TextLabel")
+    UnloadTitle.Size = UDim2.new(1, -30, 0, 22)
+    UnloadTitle.Position = UDim2.new(0, 15, 0, 14)
+    UnloadTitle.Text = "Unload Debug GUI?"
+    UnloadTitle.TextColor3 = Palette.TextPrimary
+    UnloadTitle.BackgroundTransparency = 1
+    UnloadTitle.TextXAlignment = Enum.TextXAlignment.Left
+    UnloadTitle.Font = Enum.Font.GothamBold
+    UnloadTitle.TextSize = 14
+    UnloadTitle.ZIndex = 6
+    UnloadTitle.Parent = UnloadMenu
+
+    local UnloadText = Instance.new("TextLabel")
+    UnloadText.Size = UDim2.new(1, -30, 0, 18)
+    UnloadText.Position = UDim2.new(0, 15, 0, 38)
+    UnloadText.Text = "This action cannot be undone."
+    UnloadText.TextColor3 = Palette.TextSecond
+    UnloadText.BackgroundTransparency = 1
+    UnloadText.TextXAlignment = Enum.TextXAlignment.Left
+    UnloadText.Font = Enum.Font.Gotham
+    UnloadText.TextSize = 12
+    UnloadText.ZIndex = 6
+    UnloadText.Parent = UnloadMenu
+
+    local CancelBtn = Instance.new("TextButton")
+    CancelBtn.Size = UDim2.new(0, 108, 0, 32)
+    CancelBtn.Position = UDim2.new(1, -123, 1, -46)
+    CancelBtn.BackgroundColor3 = Palette.PanelAlt
+    CancelBtn.TextColor3 = Palette.TextPrimary
+    CancelBtn.Text = "Cancel"
+    CancelBtn.Font = Enum.Font.GothamMedium
+    CancelBtn.TextSize = 13
+    CancelBtn.AutoButtonColor = false
+    CancelBtn.ZIndex = 6
+    CancelBtn.Parent = UnloadMenu
+    corner(6, CancelBtn)
+    hoverColorSwap(CancelBtn, Palette.PanelAlt, Palette.PanelLight)
+    addClickEffect(CancelBtn, Palette.TextPrimary)
+
+    local ConfirmBtn = Instance.new("TextButton")
+    ConfirmBtn.Size = UDim2.new(0, 108, 0, 32)
+    ConfirmBtn.Position = UDim2.new(0, 15, 1, -46)
+    ConfirmBtn.BackgroundColor3 = Palette.Danger
+    ConfirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ConfirmBtn.Text = "Unload"
+    ConfirmBtn.Font = Enum.Font.GothamBold
+    ConfirmBtn.TextSize = 13
+    ConfirmBtn.AutoButtonColor = false
+    ConfirmBtn.ZIndex = 6
+    ConfirmBtn.Parent = UnloadMenu
+    corner(6, ConfirmBtn)
+    hoverColorSwap(ConfirmBtn, Palette.Danger, Color3.fromRGB(150, 40, 40))
+    addClickEffect(ConfirmBtn, Color3.fromRGB(255, 255, 255))
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        Overlay.Visible = true
+        UnloadMenu.Visible = true
+        TweenService:Create(Overlay, TweenInf, {BackgroundTransparency = 0.4}):Play()
+        TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 246, 0, 118)}):Play()
+    end)
+
+    CancelBtn.MouseButton1Click:Connect(function()
+        TweenService:Create(Overlay, TweenInf, {BackgroundTransparency = 1}):Play()
+        local tween = TweenService:Create(UnloadMenu, TweenInf, {Size = UDim2.new(0, 0, 0, 0)})
+        tween:Play()
+        tween.Completed:Wait()
+        UnloadMenu.Visible = false
+        Overlay.Visible = false
+    end)
+
+    ConfirmBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+        getgenv().Debug = false
+    end)
 end)
 
 local function Notify(logType, message)
@@ -661,8 +698,48 @@ local function Notify(logType, message)
     end
 end
 
+local OverlayLabels = {}
+local currentStepText = "Initializing..."
+local currentActionText = "Idle"
+
+-- Cached values. MUST be declared before UpdateAction/UpdateMacroStep so they
+-- capture these locals (otherwise they write to globals the overlay never reads).
+local cachedWaveText = "-/-"
+local cachedCash = 0
+local cachedActionText = "Idle"
+local cachedStepText = "Initializing..."
+
+local function formatNumber(n)
+    local s = tostring(math.floor(tonumber(n) or 0))
+    local formatted = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    return (formatted:gsub("^,", ""))
+end
+
 local function UpdateMacroStep(stepString)
-    StepLabel.Text = "Current Step: " .. tostring(stepString)
+    currentStepText = tostring(stepString)
+    cachedStepText = currentStepText
+    if StepLabel then
+        pcall(function()
+            StepLabel.Text = "Current Step: " .. currentStepText
+        end)
+    end
+    if OverlayLabels.Step then
+        pcall(function()
+            OverlayLabels.Step.Text = "Step: " .. currentStepText
+        end)
+    end
+end
+
+local function UpdateAction(actionString)
+    actionString = tostring(actionString)
+    if currentActionText == actionString then return end
+    currentActionText = actionString
+    cachedActionText = actionString
+    if OverlayLabels.Action then
+        pcall(function()
+            OverlayLabels.Action.Text = "Action: " .. actionString
+        end)
+    end
 end
 
 if CoreGui:FindFirstChild("FpsModeOverlay") then CoreGui:FindFirstChild("FpsModeOverlay"):Destroy() end
@@ -673,32 +750,92 @@ local FpsOverlayGui = nil
 
 local function ensureFpsOverlay()
     if FpsOverlayGui then return end
-    FpsOverlayGui = Instance.new("ScreenGui")
-    FpsOverlayGui.Name = "FpsModeOverlay"
-    FpsOverlayGui.ResetOnSpawn = false
-    FpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    FpsOverlayGui.DisplayOrder = 999 
-    FpsOverlayGui.IgnoreGuiInset = true 
-    FpsOverlayGui.Parent = CoreGui
+    
+    local success = pcall(function()
+        FpsOverlayGui = Instance.new("ScreenGui")
+        FpsOverlayGui.Name = "FpsModeOverlay"
+        FpsOverlayGui.ResetOnSpawn = false
+        FpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        FpsOverlayGui.DisplayOrder = 999 
+        FpsOverlayGui.IgnoreGuiInset = true 
+        FpsOverlayGui.Parent = CoreGui
 
-    local Cover = Instance.new("Frame")
-    Cover.Name = "Cover"
-    Cover.Size = UDim2.new(1, 0, 1, 0)
-    Cover.BackgroundColor3 = Palette.Background
-    Cover.BorderSizePixel = 0
-    Cover.ZIndex = 1
-    Cover.Parent = FpsOverlayGui
+        local Cover = Instance.new("Frame")
+        Cover.Name = "Cover"
+        Cover.Size = UDim2.new(1, 0, 1, 0)
+        Cover.BackgroundColor3 = Palette.Background
+        Cover.BorderSizePixel = 0
+        Cover.ZIndex = 1
+        Cover.Parent = FpsOverlayGui
 
-    local CoverLabel = Instance.new("TextLabel")
-    CoverLabel.Size = UDim2.new(1, 0, 0, 30)
-    CoverLabel.Position = UDim2.new(0, 0, 1, -40)
-    CoverLabel.BackgroundTransparency = 1
-    CoverLabel.Text = "FPS Mode Enabled - 3D Rendering Off"
-    CoverLabel.TextColor3 = Palette.TextSecond
-    CoverLabel.Font = Enum.Font.GothamMedium
-    CoverLabel.TextSize = 13
-    CoverLabel.ZIndex = 1
-    CoverLabel.Parent = Cover
+        local CoverLabel = Instance.new("TextLabel")
+        CoverLabel.Size = UDim2.new(1, 0, 0, 30)
+        CoverLabel.Position = UDim2.new(0, 0, 1, -40)
+        CoverLabel.BackgroundTransparency = 1
+        CoverLabel.Text = "FPS Mode Enabled - 3D Rendering Off"
+        CoverLabel.TextColor3 = Palette.TextSecond
+        CoverLabel.Font = Enum.Font.GothamMedium
+        CoverLabel.TextSize = 13
+        CoverLabel.ZIndex = 1
+        CoverLabel.Parent = Cover
+
+        local InfoPanel = Instance.new("Frame")
+        InfoPanel.Name = "InfoPanel"
+        InfoPanel.Size = UDim2.new(0, 360, 0, 0)
+        InfoPanel.AutomaticSize = Enum.AutomaticSize.Y
+        InfoPanel.Position = UDim2.new(0, 12, 0, 12)
+        InfoPanel.BackgroundColor3 = Palette.Panel
+        InfoPanel.BorderSizePixel = 0
+        InfoPanel.ZIndex = 2
+        InfoPanel.Parent = Cover
+        corner(8, InfoPanel)
+
+        local InfoStroke = Instance.new("UIStroke")
+        InfoStroke.Color = Palette.Stroke
+        InfoStroke.Thickness = 1
+        InfoStroke.Parent = InfoPanel
+
+        local InfoPadding = Instance.new("UIPadding")
+        InfoPadding.PaddingTop = UDim.new(0, 8)
+        InfoPadding.PaddingBottom = UDim.new(0, 8)
+        InfoPadding.PaddingLeft = UDim.new(0, 10)
+        InfoPadding.PaddingRight = UDim.new(0, 10)
+        InfoPadding.Parent = InfoPanel
+
+        local InfoLayout = Instance.new("UIListLayout")
+        InfoLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        InfoLayout.Padding = UDim.new(0, 4)
+        InfoLayout.Parent = InfoPanel
+
+        local function makeInfoLabel(key, order, text, color)
+            local lbl = Instance.new("TextLabel")
+            lbl.Name = key
+            lbl.LayoutOrder = order
+            lbl.Size = UDim2.new(1, 0, 0, 16)
+            lbl.AutomaticSize = Enum.AutomaticSize.Y
+            lbl.BackgroundTransparency = 1
+            lbl.Font = Enum.Font.GothamMedium
+            lbl.TextSize = 13
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.TextYAlignment = Enum.TextYAlignment.Top
+            lbl.TextWrapped = true
+            lbl.TextColor3 = color
+            lbl.Text = text
+            lbl.ZIndex = 3
+            lbl.Parent = InfoPanel
+            OverlayLabels[key] = lbl
+            return lbl
+        end
+
+        makeInfoLabel("Wave",   1, "Wave: -/-",                     Palette.Accent)
+        makeInfoLabel("Cash",   2, "Cash: $0",                      Palette.Success)
+        makeInfoLabel("Step",   3, "Step: " .. currentStepText,     Palette.TextPrimary)
+        makeInfoLabel("Action", 4, "Action: " .. currentActionText, Palette.Warning)
+    end)
+    
+    if not success then
+        warn("Failed to create FPS overlay - executor may not support Instance.new()")
+    end
 end
 
 local function fpsBooost()
@@ -753,7 +890,7 @@ local function setFpsMode(state)
 
     if state then
         ensureFpsOverlay()
-        FpsOverlayGui.Enabled = true
+        if FpsOverlayGui then FpsOverlayGui.Enabled = true end
         fpsBooost()
     elseif FpsOverlayGui then
         FpsOverlayGui.Enabled = false
@@ -766,36 +903,39 @@ local function setFpsMode(state)
     Notify("Print", "[FPS Mode] " .. (state and "Enabled" or "Disabled"))
 end
 
-local FpsButtonGui = Instance.new("ScreenGui")
-FpsButtonGui.Name = "FpsToggleGui"
-FpsButtonGui.ResetOnSpawn = false
-FpsButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-FpsButtonGui.DisplayOrder = 1000
-FpsButtonGui.IgnoreGuiInset = true
-FpsButtonGui.Parent = CoreGui
+local FpsButtonGui
+pcall(function()
+    FpsButtonGui = Instance.new("ScreenGui")
+    FpsButtonGui.Name = "FpsToggleGui"
+    FpsButtonGui.ResetOnSpawn = false
+    FpsButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    FpsButtonGui.DisplayOrder = 1000
+    FpsButtonGui.IgnoreGuiInset = true
+    FpsButtonGui.Parent = CoreGui
 
-FpsToggleBtn = Instance.new("TextButton")
-FpsToggleBtn.Name = "FpsToggleButton"
-FpsToggleBtn.Size = UDim2.new(0, 90, 0, 30)
-FpsToggleBtn.AnchorPoint = Vector2.new(0.5, 0)
-FpsToggleBtn.Position = UDim2.new(0.5, 0, 0, 14)
-FpsToggleBtn.BackgroundColor3 = Palette.Panel
-FpsToggleBtn.AutoButtonColor = false
-FpsToggleBtn.Text = "FPS: OFF"
-FpsToggleBtn.TextColor3 = Palette.TextSecond
-FpsToggleBtn.Font = Enum.Font.GothamMedium
-FpsToggleBtn.TextSize = 13
-FpsToggleBtn.Parent = FpsButtonGui
-corner(8, FpsToggleBtn)
-local FpsToggleStroke = Instance.new("UIStroke")
-FpsToggleStroke.Color = Palette.Accent
-FpsToggleStroke.Thickness = 1
-FpsToggleStroke.Transparency = 0.5
-FpsToggleStroke.Parent = FpsToggleBtn
-hoverColorSwap(FpsToggleBtn, Palette.Panel, Palette.PanelAlt)
+    FpsToggleBtn = Instance.new("TextButton")
+    FpsToggleBtn.Name = "FpsToggleButton"
+    FpsToggleBtn.Size = UDim2.new(0, 90, 0, 30)
+    FpsToggleBtn.AnchorPoint = Vector2.new(0.5, 0)
+    FpsToggleBtn.Position = UDim2.new(0.5, 0, 0, 14)
+    FpsToggleBtn.BackgroundColor3 = Palette.Panel
+    FpsToggleBtn.AutoButtonColor = false
+    FpsToggleBtn.Text = "FPS: OFF"
+    FpsToggleBtn.TextColor3 = Palette.TextSecond
+    FpsToggleBtn.Font = Enum.Font.GothamMedium
+    FpsToggleBtn.TextSize = 13
+    FpsToggleBtn.Parent = FpsButtonGui
+    corner(8, FpsToggleBtn)
+    local FpsToggleStroke = Instance.new("UIStroke")
+    FpsToggleStroke.Color = Palette.Accent
+    FpsToggleStroke.Thickness = 1
+    FpsToggleStroke.Transparency = 0.5
+    FpsToggleStroke.Parent = FpsToggleBtn
+    hoverColorSwap(FpsToggleBtn, Palette.Panel, Palette.PanelAlt)
 
-FpsToggleBtn.MouseButton1Click:Connect(function() setFpsMode(not getgenv().Fps) end)
-if getgenv().Fps == true then setFpsMode(getgenv().Fps) end
+    FpsToggleBtn.MouseButton1Click:Connect(function() setFpsMode(not getgenv().Fps) end)
+    if getgenv().Fps == true then setFpsMode(getgenv().Fps) end
+end)
 
 local function initializeHotbar()
     Notify("print", "[Hotbar] Waiting for hotbar to initialize...")
@@ -875,35 +1015,37 @@ local function initCashUtils()
 end
 
 local function getPlayerCash()
-    -- Use the game's cash_utils module for accurate cash detection
     local cashUtils = initCashUtils()
     
     if cashUtils and cashUtils.getRoundCash then
-        local cash = cashUtils.getRoundCash(LocalPlayer)
-        if getgenv().Debug then
-            --Notify("print", "[Cash] Current cash: $" .. tostring(cash))
+        local ok, cash = pcall(function()
+            return cashUtils.getRoundCash(LocalPlayer)
+        end)
+        if ok and cash then return cash or 0 end
+    end
+    
+    local ok, result = pcall(function()
+        local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not PlayerGui then return 0 end
+        
+        local path = {"MainHud", "Hud", "RoundHud", "Hud", "Inner", "BottomCentre", "Cash"}
+        local current = PlayerGui
+        
+        for _, name in ipairs(path) do
+            current = current:FindFirstChild(name)
+            if not current then return 0 end
         end
-        return cash or 0
-    end
+        
+        if current:IsA("TextLabel") then
+            local cashText = tostring(current.Text)
+            local cleaned = cashText:gsub("[$,]", "")
+            return tonumber(cleaned) or 0
+        end
+        
+        return 0
+    end)
     
-    -- Fallback to GUI parsing if module fails
-    local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not PlayerGui then return 0 end
-    
-    local path = {"MainHud", "Hud", "RoundHud", "Hud", "Inner", "BottomCentre", "Cash"}
-    local current = PlayerGui
-    
-    for _, name in ipairs(path) do
-        current = current:FindFirstChild(name)
-        if not current then return 0 end
-    end
-    
-    if current:IsA("TextLabel") then
-        local cashText = tostring(current.Text)
-        return tonumber(cashText:gsub("[$,]", "")) or 0
-    end
-    
-    return 0
+    return ok and result or 0
 end
 
 local function hasCash(amount)
@@ -914,7 +1056,12 @@ local function hasCash(amount)
     return getPlayerCash() >= amount
 end
 
-local function waitForCash(amount, maxWait)
+-- Returns a "(current/required)" string for action labels
+local function cashTag(required)
+    return string.format("(%s/%s)", formatNumber(getPlayerCash()), formatNumber(required or 0))
+end
+
+local function waitForCash(amount, maxWait, label)
     maxWait = maxWait or 60
     local startTime = os.clock()
     while getPlayerCash() < amount do
@@ -922,6 +1069,7 @@ local function waitForCash(amount, maxWait)
             Notify("error", "[Cash] Timeout waiting for $" .. tostring(amount))
             return false
         end
+        UpdateAction(string.format("%s %s", label or "Waiting", cashTag(amount)))
         task.wait(0.1)
     end
     return true
@@ -942,17 +1090,24 @@ local function getTowerCost(towerUid, currentLevel)
     return 0
 end
 
+local function getTowerName(towerUid)
+    for _, data in pairs(hotbarData) do
+        if data.uid == tostring(towerUid) then
+            return data.name
+        end
+    end
+    return "Tower"
+end
+
 local function getCachedTowerModel(towerIndex)
-    -- First try direct cache
     if towerModels[towerIndex] then
         return towerModels[towerIndex]
     end
     
-    -- Try by serverId cache
     local serverId = placedTowersByIndex[towerIndex]
     if serverId and towerModelsById[tostring(serverId)] then
         local model = towerModelsById[tostring(serverId)]
-        towerModels[towerIndex] = model -- Update direct cache too
+        towerModels[towerIndex] = model
         return model
     end
     
@@ -960,7 +1115,6 @@ local function getCachedTowerModel(towerIndex)
 end
 
 local function getCachedTowerLevel(towerIndex)
-    -- Get level directly from cached model
     local towerModel = getCachedTowerModel(towerIndex)
     if not towerModel then return nil end
     
@@ -979,18 +1133,14 @@ local function getCachedTowerLevel(towerIndex)
 end
 
 local function verifyAndLogUpgrade(job, oldLevel)
-    -- Wait for server to process
     task.wait(0.3)
     
-    -- Check actual level on server
     local newLevel = getCachedTowerLevel(job.towerIndex)
     
     if newLevel and newLevel > oldLevel then
-        -- Upgrade successful!
         Notify("print", "✅ [Upgrade Success] Tower #" .. tostring(job.towerIndex) .. " leveled up: " .. tostring(oldLevel) .. " → " .. tostring(newLevel))
         return true
     else
-        -- Upgrade failed or didn't process
         Notify("error", "❌ [Upgrade Failed] Tower #" .. tostring(job.towerIndex) .. " level mismatch. Expected: " .. tostring(oldLevel + 1) .. ", Got: " .. tostring(newLevel or "Unknown"))
         return false
     end
@@ -1005,10 +1155,8 @@ local function getPlacedTowerStats(towerIndex)
         return nil 
     end
     
-    -- Check both caches first
     local towerModel = getCachedTowerModel(towerIndex)
     
-    -- If not in cache, search workspace (but more efficiently)
     if not towerModel then
         for _, obj in ipairs(workspace:GetChildren()) do
             if obj:IsA("Model") then
@@ -1019,7 +1167,6 @@ local function getPlacedTowerStats(towerIndex)
                    (valId and valId:IsA("ValueBase") and tostring(valId.Value) == tostring(serverId)) or
                    (obj.Name == tostring(serverId)) then
                     towerModel = obj
-                    -- Cache it in both tables!
                     towerModels[towerIndex] = towerModel
                     towerModelsById[tostring(serverId)] = towerModel
                     Notify("print", "[Tower Cache] Cached tower #" .. tostring(towerIndex) .. " (ServerId: " .. tostring(serverId) .. ")")
@@ -1085,10 +1232,8 @@ local mtHook; mtHook = hookmetamethod(game, "__namecall", function(self, ...)
         local args = {...}
         local towerUID = args[1]
         
-        -- Call the actual remote and get the result
         local serverId = mtHook(self, ...)
         
-        -- Auto-register the tower if we got a valid serverId
         if serverId then
             table.insert(placedTowersByIndex, serverId)
             local towerIndex = #placedTowersByIndex
@@ -1119,7 +1264,6 @@ local mtHook; mtHook = hookmetamethod(game, "__namecall", function(self, ...)
                         if towerModel then break end
                     end
                     
-                    -- If the model is found, locate and destroy the AnimationController
                     if towerModel then
                         for _, descendant in ipairs(towerModel:GetDescendants()) do
                             if descendant:IsA("AnimationController") then
@@ -1156,12 +1300,11 @@ local function placeTower(slotIndex, position, waitTime)
         return false
     end
     
-    -- WAIT FOR CASH BEFORE PLACING
     local cost = getTowerCost(slotData.uid, 0)
     Notify("print", "[Tower Placement] Tower: " .. tostring(slotData.name) .. " | Cost: $" .. tostring(cost))
     
     if cost > 0 then
-        if not waitForCash(cost, 30) then
+        if not waitForCash(cost, 30, "Placing " .. tostring(slotData.name)) then
             Notify("error", "[Tower Placement] Failed to get cash for tower!")
             return false
         end
@@ -1183,7 +1326,7 @@ local function placeTower(slotIndex, position, waitTime)
         return false
     end
 
-    -- Call the remote - metamethod hook handles registration automatically
+    UpdateAction("Placing " .. tostring(slotData.name) .. " " .. cashTag(cost))
     local success, err = pcall(function()
         Notify("print", "[Tower Placement] Invoking server for " .. tostring(slotData.name) .. "...")
         local result = placingEvent:InvokeServer(slotData.uid, towerCFrame)
@@ -1220,12 +1363,11 @@ local function spawnTempTower(uid,pos,maxTowers,waittime)
     end
 
     for i = 1, maxTowers do
-        -- WAIT FOR CASH BEFORE PLACING (same system as placeTower)
         local cost = getTowerCost(tostring(uid), 0)
         Notify("print", "[Temp Tower] Tower: " .. tostring(uid) .. " (" .. i .. "/" .. maxTowers .. ") | Cost: $" .. tostring(cost))
 
         if cost > 0 then
-            if not waitForCash(cost, 30) then
+            if not waitForCash(cost, 30, string.format("Placing %s [%d/%d]", getTowerName(uid), i, maxTowers)) then
                 Notify("error", "[Temp Tower] Failed to get cash for tower!")
                 break
             end
@@ -1236,6 +1378,7 @@ local function spawnTempTower(uid,pos,maxTowers,waittime)
 
         task.wait(0.2)
 
+        UpdateAction(string.format("Placing %s [%d/%d] %s", getTowerName(uid), i, maxTowers, cashTag(cost)))
         local success, err = pcall(function()
             Notify("print", "[Temp Tower] Invoking server for " .. tostring(uid) .. "...")
             local result = placingEvent:InvokeServer(tostring(uid), towerCFrame)
@@ -1281,7 +1424,6 @@ local TargetOrder = {
 }
 
 local function getCurrentTowerTarget(towerIndex)
-    -- Fast path: cached model attribute/value
     local towerModel = getCachedTowerModel(towerIndex)
     if towerModel then
         local target = towerModel:GetAttribute("Target") or towerModel:GetAttribute("Priority")
@@ -1292,7 +1434,6 @@ local function getCurrentTowerTarget(towerIndex)
         if target then return tostring(target) end
     end
 
-    -- Fall back to full stats lookup (also caches the model for next time)
     local stats = getPlacedTowerStats(towerIndex)
     if stats and stats.Target then
         return tostring(stats.Target)
@@ -1337,7 +1478,6 @@ local function changeTowerTarget(towerIndex, targetMode)
         return
     end
 
-    -- Shortest path: forward (1) if <=2 steps away, otherwise backward (-1)
     local forwardSteps = (targetIndex - currentIndex) % 4
     local direction, steps
     if forwardSteps <= 2 then
@@ -1395,10 +1535,8 @@ local function towerAnimcCheck()
             continue
         end
         
-        -- Try to get from cache first
         local towerModel = towerModelsById[serverId]
         
-        -- If not in cache, search workspace
         if not towerModel then
             for _, obj in ipairs(workspace:GetChildren()) do
                 if obj:IsA("Model") then
@@ -1417,7 +1555,6 @@ local function towerAnimcCheck()
             end
         end
         
-        -- If found, destroy animation controllers
         if towerModel then
             for _, descendant in ipairs(towerModel:GetDescendants()) do
                 if descendant:IsA("AnimationController") then
@@ -1456,8 +1593,6 @@ local function enemyfpsBoost()
     task.spawn(function()
     local v3 = require(game:GetService("ReplicatedStorage").Databases.Challenges)
     for challengeKey, challengeData in pairs(v3) do
-        -- challengeKey gives you the actual internal name (e.g., "DailyDedication")
-        -- challengeData.name gives you the display name (e.g., "Daily Dedication")
         print("Internal Name:", challengeKey, "| Display Name:", challengeData.name)
         local claimChall = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.ClaimReward
         claimChall:FireServer(
@@ -1480,7 +1615,6 @@ local function enemyfpsBoost()
                     local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                     local humanoidRoot = character:WaitForChild("HumanoidRootPart", 5)
                     if humanoidRoot then
-                        -- Handle both regular parts and models
                         if descendant:IsA("BasePart") then
                             descendant.CFrame = humanoidRoot.CFrame
                         elseif descendant:IsA("Model") then
@@ -1508,15 +1642,37 @@ local function enemyfpsBoost()
     end)
 end
 
+local function autoPetrifyBreak()
+    local Workspace = game:GetService("Workspace")
+
+    local function autoBreakout(instance)
+        if instance:IsA("ClickDetector") and instance.Name == "PetrifyBreakout" then
+            task.spawn(function()
+                while instance and instance.Parent do
+                    fireclickdetector(instance)
+                    task.wait(0.02)
+                end
+            end)
+        end
+    end
+
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        autoBreakout(descendant)
+    end
+
+    Workspace.DescendantAdded:Connect(autoBreakout)
+end
+
 local function Macro()
     currentMatchId = currentMatchId + 1
     table.clear(placedTowersByIndex)
     table.clear(placedTowersUIDByIndex)
     table.clear(autoUpgradeQueue)
-    table.clear(towerModels) -- Clear tower model caches for new match
+    table.clear(towerModels)
     table.clear(towerModelsById)
 
     UpdateMacroStep("Starting Match Template")
+    UpdateAction("Idle")
     Notify("print", "==================================================")
     Notify("print", "[Macro] Main match function started! Mode: " .. tostring(getgenv().UpgradeMode))
     Notify("print", "==================================================")
@@ -1529,8 +1685,14 @@ local function Macro()
     local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
     local isMatchActive = true
     local firedWaves = {}
+    local waveRoutineRunning = false
+
+    local function waitForUpgrades()
+        while #autoUpgradeQueue > 0 and isMatchActive do
+            task.wait(0.5)
+        end
+    end
     
-    -- WAIT FOR AND VOTE DIFFICULTY
     Notify("print", "[Macro] Waiting for difficulty vote GUI...")
     local difficultyGui = nil
     local diffWaitCount = 0
@@ -1544,7 +1706,7 @@ local function Macro()
     
     if difficultyGui then
         Notify("print", "[Macro] Difficulty vote GUI found! Voting...")
-        voteDifficulty("Gauntlet",0)--Normal,Horror, PurgeHorror,Endless,Gauntlet
+        voteDifficulty("Gauntlet",0)--Easy,Normal,Horror,Endless,Gauntlet
 
         Notify("print", "[Macro] Waiting for vote GUI to disappear...")
         repeat task.wait(0.25) until not findDynamicGui(PlayerGui, {"MainHud", "DifficultyVote"})
@@ -1553,10 +1715,12 @@ local function Macro()
         Notify("warn", "[Macro] Difficulty vote GUI never appeared (might already be voted)")
     end
 
-    -- Upgrade loop
     task.spawn(function()
         while isMatchActive and task.wait(0.1) do
-            if #autoUpgradeQueue == 0 then continue end
+            if #autoUpgradeQueue == 0 then
+                if not waveRoutineRunning then UpdateAction("Idle") end
+                continue
+            end
             
             if getgenv().UpgradeMode == "Sequential" then
                 local job = autoUpgradeQueue[1]
@@ -1571,10 +1735,8 @@ local function Macro()
                     continue 
                 end
                 
-                -- Try to get level from cached model first (fastest)
                 local currentLevel = getCachedTowerLevel(job.towerIndex)
                 
-                -- Fall back to full stats lookup if cache miss
                 if not currentLevel then
                     local stats = getPlacedTowerStats(job.towerIndex)
                     if stats and stats.Level then
@@ -1595,6 +1757,13 @@ local function Macro()
                     continue
                 end
                 
+                do
+                    local pUid = placedTowersUIDByIndex[job.towerIndex]
+                    local pCost = getTowerCost(pUid, currentLevel)
+                    UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                        getTowerName(pUid), job.towerIndex, currentLevel, currentLevel + 1, cashTag(pCost)))
+                end
+
                 if os.clock() - job.lastUpgradeTime >= job.interval then
                     local towerUid = placedTowersUIDByIndex[job.towerIndex]
                     local cost = getTowerCost(towerUid, currentLevel)
@@ -1603,7 +1772,10 @@ local function Macro()
                         --Notify("print", "[Sequential] Tower #" .. tostring(job.towerIndex) .. " - Level: " .. tostring(currentLevel) .. "/" .. tostring(job.maxLevel) .. " | Cost: $" .. tostring(cost))
                     end
                     
+                    local towerName = getTowerName(towerUid)
                     if job.waitForMoney and cost > 0 and getPlayerCash() < cost then
+                        UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                            towerName, job.towerIndex, currentLevel, currentLevel + 1, cashTag(cost)))
                         continue
                     end
                     
@@ -1612,16 +1784,18 @@ local function Macro()
                         if getgenv().Debug then
                             Notify("print", "[Sequential] Upgrading tower #" .. tostring(job.towerIndex) .. " from level " .. tostring(currentLevel) .. " to " .. tostring(currentLevel + 1))
                         end
+                        UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                            towerName, job.towerIndex, currentLevel, currentLevel + 1, cashTag(cost)))
                         UpgradeTowerRemote:FireServer(tonumber(serverId))
                         job.trackedLevel = currentLevel + 1
                         job.lastUpgradeTime = os.clock()
-                        -- Wait for server to process upgrade
                         task.wait(0.2)
                     end
                 end
 
             elseif getgenv().UpgradeMode == "Priority" then
                 local i = 1
+                local labelSet = false
                 while i <= #autoUpgradeQueue do
                     local job = autoUpgradeQueue[i]
                     local serverId = placedTowersByIndex[job.towerIndex]
@@ -1634,10 +1808,8 @@ local function Macro()
                         continue
                     end
                     
-                    -- Try to get level from cached model first (fastest)
                     local currentLevel = getCachedTowerLevel(job.towerIndex)
                     
-                    -- Fall back to full stats lookup if cache miss
                     if not currentLevel then
                         local stats = getPlacedTowerStats(job.towerIndex)
                         if stats and stats.Level then
@@ -1652,15 +1824,12 @@ local function Macro()
                     
                     if not currentLevel then currentLevel = 1 end
                     
-                    -- Check if tower is complete
                     if currentLevel >= job.maxLevel then
                         Notify("print", "[Upgrade] Priority Completed: Tower #" .. tostring(job.towerIndex) .. " (Level " .. tostring(currentLevel) .. ")")
                         table.remove(autoUpgradeQueue, i)
-                        -- Don't increment i here because the next tower shifts into this index
                         continue 
                     end
                     
-                    -- Get cost for next upgrade
                     local towerUid = placedTowersUIDByIndex[job.towerIndex]
                     local cost = getTowerCost(towerUid, currentLevel)
                     local hasEnoughCash = (cost == 0 or getPlayerCash() >= cost)
@@ -1669,22 +1838,32 @@ local function Macro()
                         Notify("print", "[Upgrade] Tower #" .. tostring(job.towerIndex) .. " - Level: " .. tostring(currentLevel) .. "/" .. tostring(job.maxLevel) .. " | Cost: $" .. tostring(cost) .. " | Cash: $" .. tostring(getPlayerCash()))
                     end
                     
-                    -- Wait for cash if needed
+                    local towerName = getTowerName(towerUid)
                     if job.waitForMoney and not hasEnoughCash then
+                        if not labelSet then
+                            UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                                towerName, job.towerIndex, currentLevel, currentLevel + 1, cashTag(cost)))
+                        end
                         break
                     end
                     
-                    -- Upgrade if interval passed
+                    if not labelSet then
+                        labelSet = true
+                        UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                            towerName, job.towerIndex, currentLevel, currentLevel + 1, cashTag(cost)))
+                    end
+
                     if os.clock() - job.lastUpgradeTime >= job.interval then
                         local UpgradeTowerRemote = ReplicatedStorage.Modules.Remotes.RemoteEvent.UpgradeTower
                         if UpgradeTowerRemote then
                             if getgenv().Debug then
                                 Notify("print", "[Upgrade] Upgrading tower #" .. tostring(job.towerIndex) .. " from level " .. tostring(currentLevel) .. " to " .. tostring(currentLevel + 1))
                             end
+                            UpdateAction(string.format("Upgrading %s #%d (Lv %d → %d) %s",
+                                towerName, job.towerIndex, currentLevel, currentLevel + 1, cashTag(cost)))
                             UpgradeTowerRemote:FireServer(tonumber(serverId))
                             job.trackedLevel = currentLevel + 1
                             job.lastUpgradeTime = os.clock()
-                            -- Wait for server to process upgrade
                             task.wait(0.2)
                         end
                     end
@@ -1694,87 +1873,163 @@ local function Macro()
             end
         end
     end)
-    spd(2)
-    -- Wave actions (TEMPLATE - CLEAR AND CUSTOMIZE)
+
     local function wv1()
         spd(2)
-        placeTower(2, CFrame.new(9996.3876953125, -11.642234802246, -26.427516937256, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(2, CFrame.new(9932.4345703125, -11.642234802246, -26.928085327148, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(2, CFrame.new(9986.427734375, -11.642234802246, 34.7405128479, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(10009.400390625, -11.847936630249, -12.527061462402, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(9962.740234375, -11.847936630249, -56.513122558594, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(9971.94140625, -11.847936630249, 21.695613861084, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(1, CFrame.new(9971.94140625, -11.847936630249, 21.695613861084, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-
-        placeTower(3, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(3, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(3, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(3, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-
-        placeTower(4, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(4, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(4, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(4, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(4, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-
-        placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-        placeTower(5, CFrame.new(9885.5419921875, -11.773555755615, -87.51741027832, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)
-
-        towerAnimcCheck()
-        task.spawn(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
-        end)
+        Notify("print", "[Wave 1]")
+        --raver
+        placeTower(3, CFrame.new(9998.353515625, -11.642234802246094, -26.287551879882812), 1)--1
+        placeTower(3, CFrame.new(9931.7080078125, -11.642234802246094, -26.216838836669922), 1)--2
+        placeTower(3, CFrame.new(9980.5693359375, -11.642234802246094, 34.9383544921875), 1)--3
+        --angel
+        placeTower(1, CFrame.new(9960.8134765625, -11.773555755615234, 23.196168899536133, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--4
+        placeTower(1, CFrame.new(9946.126953125, -11.773555755615234, -26.286762237548828, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--5
+        placeTower(1, CFrame.new(9983.4970703125, -11.773555755615234, -38.819725036621094, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--6
+        --master
+        placeTower(5, CFrame.new(9888.2685546875, -11.510176658630371, 50.930149078369141, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--7
+        placeTower(5, CFrame.new(9892.04296875, -11.510176658630371, -13.79638671875, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--8
+        placeTower(5, CFrame.new(9890.2265625, -11.510176658630371, -89.68963623046875, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--9
+        --Titan
+        placeTower(2, CFrame.new(9963, -11.5, 5, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--10
+        placeTower(2, CFrame.new(9964, -11.5, -39, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--11
+        --geisha
+        placeTower(4, CFrame.new(9969.3310546875, -11.746274948120117, -54.804229736328125, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--12
+        placeTower(4, CFrame.new(9972.3173828125, -11.746274948120117, 22.144741058349609, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--13
+        placeTower(4, CFrame.new(9963.416015625, -11.746274948120117, -8.9151630401611328, 1, 0, 0, 0, 1, 0, 0, 0, 1), 1)--14
     end
-
-    local function wv3()
-        -- ADD YOUR WAVE 3 ACTIONS HERE
-        Notify("print", "[Wave 3]")
-    end
-
-    local function wv5()
+    local function wv15()
+        Notify("print", "[Wave 15]")
+        --raver
         autoUpgradeTower(1, true, 1)
         autoUpgradeTower(2, true, 1)
         autoUpgradeTower(3, true, 1)
-        autoUpgradeTower(5, true, 1)
+        waitForUpgrades()
+    end
+    local function wv18()
+        Notify("print", "[Wave 18]")
+        --angel
         autoUpgradeTower(4, true, 1)
+        autoUpgradeTower(5, true, 1)
         autoUpgradeTower(6, true, 1)
-        towerAnimcCheck()
-        task.spawn(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
-        end)
+        --master
+        autoUpgradeTower(7, true, 1)
+        autoUpgradeTower(8, true, 1)
+        autoUpgradeTower(9, true, 1)
+        waitForUpgrades()
     end
-
-    local function wv9()
-        -- ADD YOUR WAVE 9 ACTIONS HERE
-        Notify("print", "[Wave 9]")
-        task.spawn(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
-        end)
-    end
-
     local function wv19()
-        -- ADD YOUR WAVE 19 ACTIONS HERE
         Notify("print", "[Wave 19]")
-        task.spawn(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
-        end)
+        --Titan
+        autoUpgradeTower(10, true, 1)
+        autoUpgradeTower(11, true, 1)
+        waitForUpgrades()
     end
-    local function wv25()
-        -- ADD YOUR WAVE 25 ACTIONS HERE
-        Notify("print", "[Wave 25]")
-        task.spawn(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
-        end)
+    local function wv21()
+        Notify("print", "[Wave 21]")
+        --geisha
+        autoUpgradeTower(12, true, 1)
+        autoUpgradeTower(13, true, 1)
+        autoUpgradeTower(14, true, 1)
+
+        waitForUpgrades()
+    end
+    --should be done after wave 75
+    local function wv100()
+        Notify("print", "[Wave 100]")
+        autoUpgradeTower(1, true, 1)
+        autoUpgradeTower(2, true, 1)
+        autoUpgradeTower(3, true, 1)
+        autoUpgradeTower(4, true, 1)
+        autoUpgradeTower(5, true, 1)
+        autoUpgradeTower(6, true, 1)
+        autoUpgradeTower(7, true, 1)
+        autoUpgradeTower(8, true, 1)
+        autoUpgradeTower(9, true, 1)
+        autoUpgradeTower(10, true, 1)
+        autoUpgradeTower(11, true, 1)
+        autoUpgradeTower(12, true, 1)
+        autoUpgradeTower(13, true, 1)
+        autoUpgradeTower(14, true, 1)
+        waitForUpgrades()
     end
     
     local waveActions = {
-        [1] = wv1, [3] = wv3, [5] = wv5, [9] = wv9, [19] = wv19, [25] = wv25
+        [1] = wv1,
+        [15] = wv15,
+        [18] = wv18,
+        [19] = wv19,
+        [21] = wv21,
+        [100] = wv100
     }
 
-    -- Wave detection loop
+    local sortedWaves = {}
+    for waveNum in pairs(waveActions) do
+        table.insert(sortedWaves, waveNum)
+    end
+    table.sort(sortedWaves)
+
+    local waveQueue = {}
+    local completedWaves = {} -- Track which waves have actually FINISHED (not just queued)
+    local queuedWaves = {} -- Track which waves are already in the queue to prevent duplicates
+    local executingWaves = {} -- Track waves currently being executed
+    local runningWave = nil
+    local completedCount = 0
+    local lastCheckedWave = 0 -- Track last wave we checked to prevent continuous re-queueing
+
+    -- Rebuilds the Step label from the REAL queue state. Called every time the
+    -- queue changes (wave queued, wave started, wave finished) so it never goes stale.
+    local function refreshWaveStatus()
+        if not isMatchActive then return end
+        local queuedList = {}
+        for _, w in ipairs(waveQueue) do table.insert(queuedList, tostring(w)) end
+
+        local nextTrigger = nil
+        for _, w in ipairs(sortedWaves) do
+            if not completedWaves[w] and w ~= runningWave then nextTrigger = w break end
+        end
+
+        local text = runningWave and ("Running Wave " .. runningWave) or "No routine running"
+        text = text .. string.format(" | Queued: %d", #waveQueue) -- FIXED: Count actual queue length
+        if #queuedList > 0 then text = text .. " [" .. table.concat(queuedList, ", ") .. "]" end
+        text = text .. string.format(" | Done: %d/%d", completedCount, #sortedWaves)
+        if nextTrigger then text = text .. " | Next: W" .. nextTrigger end
+        UpdateMacroStep(text)
+    end
+
+    task.spawn(function()
+        while isMatchActive do
+            local nextWave = table.remove(waveQueue, 1)
+            if nextWave then
+                queuedWaves[nextWave] = nil -- Remove from queued tracking when about to run
+                executingWaves[nextWave] = true -- Mark as executing
+                runningWave = nextWave
+                refreshWaveStatus()
+                Notify("print", "[Macro] Running Wave " .. tostring(nextWave) .. " routine. Remaining in queue: " .. tostring(#waveQueue))
+                waveRoutineRunning = true
+                
+                local ok, err = pcall(waveActions[nextWave])
+                
+                waveRoutineRunning = false
+                -- Mark complete AFTER pcall finishes
+                executingWaves[nextWave] = nil -- Wave is done executing
+                completedWaves[nextWave] = true -- Mark as completed
+                completedCount = completedCount + 1
+                runningWave = nil
+                refreshWaveStatus()
+                
+                if not ok then
+                    Notify("error", "[Macro] Wave " .. tostring(nextWave) .. " routine errored: " .. tostring(err))
+                end
+                Notify("print", "[Macro] Wave " .. tostring(nextWave) .. " completed! [" .. tostring(completedCount) .. "/" .. tostring(#sortedWaves) .. "]")
+                if #waveQueue == 0 and #autoUpgradeQueue == 0 then
+                    UpdateAction("Idle")
+                end
+            else
+                task.wait(0.1)
+            end
+        end
+    end)
+
     task.spawn(function()
         while isMatchActive and task.wait(0.5) do
             local gameOverGui = findDynamicGui(PlayerGui, {"MainHud", "Hud", "RoundHud", "Hud", "GameOver"})
@@ -1784,7 +2039,6 @@ local function Macro()
                 getgenv().Ability = false
                 isMatchActive = false
 
-                -- Garden mode: Cash out at specified wave
                 if getgenv().Garden == true then
                     UpdateMacroStep("Garden Mode - Cashing Out")
                     Notify("print", "[Macro] Garden mode enabled. Cashing out...")
@@ -1806,9 +2060,6 @@ local function Macro()
                     Notify("print", "[Macro] Waiting for new match DifficultyVote GUI...")
                     task.wait(2)
                     task.spawn(Macro)
-                    task.spawn(function()
-                        loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/webhook.lua'))()
-                    end)
                 else
                     UpdateMacroStep("Returning to Lobby")
                     local RespondRemote = ReplicatedStorage.Modules.Remotes.RemoteEvent.RespondToQuery
@@ -1821,11 +2072,11 @@ local function Macro()
             
             local waveLabel = findDynamicGui(PlayerGui, {"MainHud", "Hud", "RoundHud", "Hud", "Inner", "CentreTop", "Info", "WaveCounter"})
             if waveLabel and waveLabel:IsA("TextLabel") then
-                local currentWave = tonumber(tostring(waveLabel.Text):match("Wave%s*(%d+)%s*/"))
+                local waveText = (tostring(waveLabel.Text):gsub("<[^>]->", ""))
+                local currentWave = tonumber(waveText:match("Wave%s*(%d+)")) or tonumber(waveText:match("(%d+)"))
                 
-                -- Garden mode: Cash out at specified wave
-                if getgenv().Garden == true and currentWave and currentWave >= getgenv().GardenWave and not firedWaves["gardencashout"] then
-                    firedWaves["gardencashout"] = true
+                if getgenv().Garden == true and currentWave and currentWave >= getgenv().GardenWave and not completedWaves["gardencashout"] then
+                    completedWaves["gardencashout"] = true
                     UpdateMacroStep("Garden Cashout Wave " .. tostring(getgenv().GardenWave))
                     Notify("print", "[Macro] Garden mode: Reached wave " .. tostring(getgenv().GardenWave) .. ". Cashing out...")
                     local Event = game:GetService("ReplicatedStorage").Modules.Remotes.RemoteEvent.CancelEndless
@@ -1835,17 +2086,84 @@ local function Macro()
                     Notify("print", "[Macro] Cash out remote fired!")
                 end
                 
-                if currentWave and waveActions[currentWave] and not firedWaves[currentWave] then
-                    firedWaves[currentWave] = true
-                    UpdateMacroStep("Wave " .. tostring(currentWave))
-                    Notify("print", "[Macro] Triggering Wave " .. tostring(currentWave) .. " routine.")
-                    task.spawn(waveActions[currentWave])
+                if currentWave then
+                    for _, waveNum in ipairs(sortedWaves) do
+                        -- Only queue if: not completed, not already queued, not currently executing, and not already in waveQueue
+                        local alreadyInQueue = false
+                        for _, qw in ipairs(waveQueue) do
+                            if qw == waveNum then alreadyInQueue = true break end
+                        end
+                        
+                        if currentWave >= waveNum and not completedWaves[waveNum] and not queuedWaves[waveNum] and not executingWaves[waveNum] and not alreadyInQueue then
+                            table.insert(waveQueue, waveNum)
+                            queuedWaves[waveNum] = true -- Mark as queued
+                            refreshWaveStatus()
+                            Notify("print", "[Macro] Queued Wave " .. tostring(waveNum) .. " routine (current wave: " .. tostring(currentWave) .. ", queue size: " .. tostring(#waveQueue) .. ")")
+                        end
+                    end
                 end
             end
         end
     end)
 end
-enemyfpsBoost()
+
+-- Main thread updater: reads GUI values and caches them for the spawned overlay loop
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local label = findDynamicGui(playerGui, {"MainHud", "Hud", "RoundHud", "Hud", "Inner", "CentreTop", "Info", "WaveCounter"})
+            if label and label:IsA("TextLabel") then
+                local text = (tostring(label.Text):gsub("<[^>]->", ""))
+                local cur, max = text:match("(%d+)%s*/%s*(.+)")
+                if cur and max then
+                    max = max:match("^%s*(.-)%s*$")
+                    if max ~= "" then 
+                        cachedWaveText = cur .. "/" .. max
+                    else
+                        cachedWaveText = cur
+                    end
+                else
+                    local onlyCur = text:match("(%d+)")
+                    if onlyCur then cachedWaveText = onlyCur end
+                end
+            end
+        end
+        
+        cachedCash = getPlayerCash()
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.25)
+        if not (FpsOverlayGui and FpsOverlayGui.Enabled) then 
+            task.wait(0.1)
+            continue 
+        end
+
+        if OverlayLabels.Wave then
+            OverlayLabels.Wave.Text = "Wave: " .. cachedWaveText
+        end
+        if OverlayLabels.Cash then
+            OverlayLabels.Cash.Text = "Cash: $" .. formatNumber(cachedCash)
+        end
+        if OverlayLabels.Step then
+            OverlayLabels.Step.Text = "Step: " .. cachedStepText
+        end
+        if OverlayLabels.Action then
+            OverlayLabels.Action.Text = "Action: " .. cachedActionText
+        end
+    end
+end)
+
+autoPetrifyBreak()
+task.spawn(function()
+    getgenv().WEBHOOK_URL = "https://discord.com/api/webhooks/1414475376230535199/F6V5IZJkOUMdxd-ZdC32JdlaTw-FGDz-raRMGW7a6FsYTmYtRkqOSfLy123hat3xSNR1"
+    getgenv().AUTO_SEND = true
+    getgenv().DEBUG = true
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/webhook.lua'))()
+end)
 task.spawn(function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/gauntletCard.lua"))()
 end)
