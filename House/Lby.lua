@@ -53,7 +53,7 @@ local player = game.Players.LocalPlayer
 local proximityThreshold = 10 -- Adjust this distance as needed
 
 -- === GLOBAL SETTINGS === --
-getgenv().Mode = "Raid" --Story,Event,Garden,Raid
+getgenv().Mode = "Event" --Story,Event,Garden,Raid
 getgenv().Floor = 4 -- Event:1, Garden:1
 getgenv().Stage = 4 
 getgenv().raidStage = 5 
