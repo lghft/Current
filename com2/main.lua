@@ -11,7 +11,7 @@ getgenv().AutoClicker = true
 getgenv().Targeting = true 
 getgenv().Ability = false
 getgenv().Boss = true 
-getgenv().BossType = "DeadLight" 
+getgenv().BossType = "Destroyer" 
 getgenv().Days = false
 getgenv().InfCheck = false 
 getgenv().TargetScore = 32400 
@@ -24,6 +24,7 @@ getgenv().AltAutoClicker = true
 getgenv().AntiLag = true
 getgenv().FullBright = true
 getgenv().AimPart = "Head" 
+getgenv().TeleportEnemies = true
 
 -- [[ GLOBAL COUNTER ]]
 getgenv().EvadeCount = 0
@@ -162,10 +163,6 @@ task.spawn(function()
     end
 
     GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
-
-    --print("rejoin time")
-
-    --print("Auto reconnect script loaded!")
 end)
 
 ----------------------------------------------------------------
@@ -274,19 +271,34 @@ end
 ----------------------------------------------------------------
 -- WEAPON MODS
 ----------------------------------------------------------------
+getgenv().FastWeapon = true
+
 local function applyFastWeapons()
     if not getgenv().FastWeapon then return end
+    
     for _, obj in ipairs(getgc(true)) do
         if type(obj) == "table" then
-            if rawget(obj, "Damage") then
-                obj.Damage = 999999
-            end
+            -- Check if the table contains weapon settings
             if rawget(obj, "FireRate") and rawget(obj, "ReloadTime") then
-                local isReadOnly = isreadonly(obj)
-                if isReadOnly then setreadonly(obj, false) end
-                obj.FireRate = 0
-                obj.ReloadTime = 0
-                if isReadOnly then setreadonly(obj, true) end
+                task.spawn(function()
+                    local isReadOnly = isreadonly(obj)
+                    if isReadOnly then 
+                        setreadonly(obj, false) 
+                    end
+                    
+                    -- Set FireRate to 0 for instant firing
+                    obj.FireRate = 0
+                    
+                    -- Set ReloadTime to a tiny value instead of 0 
+                    -- to prevent breaking internal math/task.wait()
+                    --obj.ReloadTime = 0
+                    
+                    if isReadOnly then 
+                        setreadonly(obj, true) 
+                    end
+                    
+                    task.wait()
+                end)
             end
         end
     end
@@ -296,8 +308,21 @@ game.Players.LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2.5)
     applyFastWeapons()
 end)
+local progress = game:GetService("Players").LocalPlayer.PlayerGui.GunGUI.Frame.Progress
 
-applyFastWeapons()
+local reloadUI = progress.Visible
+
+progress:GetPropertyChangedSignal("Visible"):Connect(function()
+	reloadUI = progress.Visible
+	print("reloadUI is now", reloadUI)
+    if reloadUI == true then
+        applyFastWeapons()
+    end
+end)
+
+task.spawn(function()
+    applyFastWeapons()
+end)
 
 ----------------------------------------------------------------
 -- GUI SETUP
@@ -514,7 +539,7 @@ task.spawn(function()
             local resFrame = mainMenu:FindFirstChild("ResultFrame")
             if resFrame and resFrame.Visible then
                 local closeBtn
-                for _, name in ipairs({"CloseButton"}) do --"CloseButton","Close","OkButton","Continue","Exit"
+                for _, name in ipairs({"CloseButton"}) do 
                     closeBtn = resFrame:FindFirstChild(name)
                     if closeBtn then break end
                 end
@@ -575,7 +600,6 @@ end)
 -- AUTOFARM
 ----------------------------------------------------------------
 function autoFarm()
-    -- Executioner Logic Helpers
     local function isVulnerableBossProp(obj)
         if not obj then return false end
         local hrp = obj:FindFirstChild("HumanoidRootPart") or (obj:IsA("BasePart") and obj)
@@ -687,7 +711,6 @@ function autoFarm()
         local pList, nList, cList = {}, {}, {}
         local map = mapFolder:GetChildren()[1]
 
-        -- Boss Logic
         if getgenv().Boss and getgenv().BossType == "Executioner" and map and map.Name == "Prison" then
             pcall(function()
                 local props = map:FindFirstChild("PROPS")
@@ -717,7 +740,6 @@ function autoFarm()
                 end
             end
 
-            -- Check specifically for Box or Laser vulnerability to block Zombie
             local blockZombieTeleport = false
             for _, tName in ipairs({"BOX1", "BOX2"}) do
                 if isVulnerableBossProp(main:FindFirstChild(tName)) then
@@ -735,8 +757,6 @@ function autoFarm()
                 end
             end
 
-            -- 3. Zombie Boss Check
-            -- Teleport if no Boxes/Lasers are active (allowing it to teleport alongside Crystal)
             if not blockZombieTeleport then
                 local zombie = map:FindFirstChild("Zombie")
                 if zombie then
@@ -851,12 +871,16 @@ function autoFarm()
         end
 
         local totalTargets = 0
-        for _, t in ipairs(finalTargets) do
-            pcall(function()
-                t.Anchored = true
-                t.CFrame = (root.CFrame * CFrame.new(2.5, -5, -7)) * CFrame.Angles(0, math.pi, 0)
-                totalTargets = totalTargets + 1
-            end)
+        
+        -- [[ TOGGLE CHECK FOR ENEMY TELEPORTING ]]
+        if getgenv().TeleportEnemies then
+            for _, t in ipairs(finalTargets) do
+                pcall(function()
+                    t.Anchored = true
+                    t.CFrame = (root.CFrame * CFrame.new(2.5, -5, -7)) * CFrame.Angles(0, math.pi, 0)
+                    totalTargets = totalTargets + 1
+                end)
+            end
         end
 
         zombiesLabel.Text = "Zombies/Obj: " .. totalTargets
@@ -923,7 +947,6 @@ task.spawn(function()
                 task.wait(0.5)
                 pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("PartyHubRemote"):FireServer("START") end)
                 task.wait(100)
-                --applyFastWeapons()
             elseif getgenv().Survival then
                 lastStartTime = tick()
                 pcall(function()
