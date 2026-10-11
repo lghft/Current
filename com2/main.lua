@@ -308,18 +308,19 @@ game.Players.LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2.5)
     applyFastWeapons()
 end)
-local progress = game:GetService("Players").LocalPlayer.PlayerGui.GunGUI.Frame.Progress
+task.spawn(function()
+    local progress = game:GetService("Players").LocalPlayer.PlayerGui.GunGUI.Frame.Progress
 
-local reloadUI = progress.Visible
+    local reloadUI = progress.Visible
 
-progress:GetPropertyChangedSignal("Visible"):Connect(function()
-	reloadUI = progress.Visible
-	print("reloadUI is now", reloadUI)
-    if reloadUI == true then
-        applyFastWeapons()
-    end
+    progress:GetPropertyChangedSignal("Visible"):Connect(function()
+        reloadUI = progress.Visible
+        print("reloadUI is now", reloadUI)
+        if reloadUI == true then
+            applyFastWeapons()
+        end
+    end)
 end)
-
 task.spawn(function()
     applyFastWeapons()
 end)
