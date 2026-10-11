@@ -1,4 +1,5 @@
 repeat task.wait() until game:IsLoaded()
+
 if game.PlaceId == 102358977893515 then
     task.wait(3)
 else
