@@ -1,4 +1,9 @@
 repeat task.wait() until game:IsLoaded()
+if game.PlaceId == 102358977893515 then
+    task.wait(3)
+else
+    task.wait(2)
+end
 
 -- [[ SETTINGS ]]
 getgenv().Mob = true 
@@ -158,9 +163,9 @@ task.spawn(function()
 
     GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
-    print("rejoin time")
+    --print("rejoin time")
 
-    print("Auto reconnect script loaded!")
+    --print("Auto reconnect script loaded!")
 end)
 
 ----------------------------------------------------------------
@@ -509,18 +514,23 @@ task.spawn(function()
             local resFrame = mainMenu:FindFirstChild("ResultFrame")
             if resFrame and resFrame.Visible then
                 local closeBtn
-                for _, name in ipairs({"CloseButton","Close","OkButton","Continue","Exit"}) do
+                for _, name in ipairs({"CloseButton"}) do --"CloseButton","Close","OkButton","Continue","Exit"
                     closeBtn = resFrame:FindFirstChild(name)
                     if closeBtn then break end
                 end
                 if not closeBtn then
                     for _, v in pairs(resFrame:GetDescendants()) do
                         if v:IsA("TextButton") or v:IsA("ImageButton") then
-                            closeBtn = v break
+                            closeBtn = v 
+                            break
                         end
                     end
                 end
-                if closeBtn then clickButton(closeBtn) closed = true end
+                if closeBtn then 
+                    clickButton(closeBtn) 
+                    task.wait(40)
+                    closed = true 
+                end
             end
         end
 
@@ -531,18 +541,24 @@ task.spawn(function()
                 local sFrame = mFrame:FindFirstChild("Frame")
                 local searchRoot = sFrame or mFrame
                 local closeBtn
-                for _, name in ipairs({"CloseButton","Close","OkButton","Continue","Exit"}) do
+                for _, name in ipairs({"CloseButton"}) do
                     closeBtn = searchRoot:FindFirstChild(name)
                     if closeBtn then break end
                 end
                 if not closeBtn then
                     for _, v in pairs(searchRoot:GetDescendants()) do
                         if v:IsA("TextButton") or v:IsA("ImageButton") then
-                            closeBtn = v break
+                            closeBtn = v 
+                            break
                         end
                     end
                 end
-                if closeBtn then clickButton(closeBtn) closed = true sendLobbyWebhook() task.wait(1.6) end
+                if closeBtn then 
+                    clickButton(closeBtn) 
+                    closed = true 
+                    sendLobbyWebhook() 
+                    task.wait(40)
+                end
             end
         end
 
@@ -644,6 +660,8 @@ function autoFarm()
                         end
                     end
                     posLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                elseif getgenv().Boss and getgenv().BossType == "Destroyer" then
+                    hrp.CFrame = CFrame.new(-360, 150, 103)
                 else
                     if map and map:FindFirstChild("PLAYER_SPAWN") then
                         local yOffset = getgenv().Days and 60 or (getgenv().Survival and 45 or 50)
@@ -895,17 +913,17 @@ task.spawn(function()
             evadeCountLabel.Text = "Evades: 0/4"
             sendLobbyWebhook()
 
-            if getgenv().Boss and game.PlaceId == 102358977893515 then
+            if getgenv().Boss and game.PlaceId == 102358977893515 and game.PlaceId ~= 15899178400 then
                 lastStartTime = tick()
                 pcall(function()
                     game:GetService("ReplicatedStorage"):WaitForChild("PartyHubRemote"):FireServer("CREATE", {
-                        Status = false,Boss = getgenv().BossType,Limit = 4,Password = generateRandomPassword(15)
+                        Status = false,Boss = getgenv().BossType,Limit = 4,Password = generateRandomPassword(12)
                     })
                 end)
-                task.wait(1)
+                task.wait(0.5)
                 pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("PartyHubRemote"):FireServer("START") end)
-                task.wait()
-                applyFastWeapons()
+                task.wait(100)
+                --applyFastWeapons()
             elseif getgenv().Survival then
                 lastStartTime = tick()
                 pcall(function()
