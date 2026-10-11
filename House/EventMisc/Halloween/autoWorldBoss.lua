@@ -50,9 +50,9 @@ local CONFIG = {
 
     WalkToLoot = {
         Enabled = true,
-        StopDistance = 10,     -- stop walking once this close (horizontal studs)
-        ResumeDistance = 12,   -- only start walking again if you drift past this
-        RepathInterval = 0.5,  -- how often MoveTo is re-sent while walking
+        StopDistance = 20,     -- stop walking once this close (horizontal studs)
+        ResumeDistance = 22,   -- only start walking again if you drift past this
+        RepathInterval = 25,  -- how often MoveTo is re-sent while walking
     },
 
     SnareWalk = {
