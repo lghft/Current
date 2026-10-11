@@ -29,7 +29,7 @@ local CONFIG = {
 
     GroundY = {
         Enabled = true,        -- set spot Y to the Ground's Y
-        Offset = 0,            -- added on top of the Ground's Y
+        Offset = 2.45,            -- added on top of the Ground's Y
     },
 
     TowerUpgrade = {
