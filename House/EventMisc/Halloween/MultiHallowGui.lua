@@ -102,14 +102,22 @@ local function teleportTo(pos)
     end
 end
 
--- Equips the scythe by firing the holding-item remote
-local function equipScythe()
+-- Equips an item by firing the holding-item remote
+local function setHolding(itemName)
     local ok, err = pcall(function()
-        ReplicatedStorage.Modules.Remotes.RemoteEvent.SetHoldingItem:FireServer("PlayerScythe9")
+        ReplicatedStorage.Modules.Remotes.RemoteEvent.SetHoldingItem:FireServer(itemName)
     end)
     if not ok then
-        warn("[Candy Loop] Failed to equip scythe: " .. tostring(err))
+        warn("[Candy Loop] Failed to equip " .. tostring(itemName) .. ": " .. tostring(err))
     end
+end
+
+local function equipScythe()
+    setHolding("PlayerScythe9")
+end
+
+local function equipShovel()
+    setHolding("GraveShovel")
 end
 
 local function inLobby()
@@ -411,6 +419,7 @@ end
 -- =========================
 -- Graveyard auto (route based)
 -- =========================
+-- Each stop digs the two graves listed for it. Walks to any grave that's out of dig range.
 local GRAVE_CONFIG = {
     ENABLED = true,
     ROUTE_COOLDOWN = 2,
@@ -419,13 +428,12 @@ local GRAVE_CONFIG = {
     STALL_WAIT = 30,
     MAX_GRAVES = 8,
     DIG_RANGE = 20,           -- Server allows 22, stay a bit under it
-    PER_STOP = 2,             -- Graves handled per waypoint
     TELEPORT_POS = Vector3.new(1786, 271, -2600),
     ROUTE = {
-        { pos = Vector3.new(1754, 272, -2600) },
-        { pos = Vector3.new(1736, 272, -2600) },
-        { pos = Vector3.new(1718, 272, -2600) },
-        { pos = Vector3.new(1700, 272, -2600) },
+        { pos = Vector3.new(1754, 272, -2600), graves = {1, 2} },
+        { pos = Vector3.new(1736, 272, -2600), graves = {3, 4} },
+        { pos = Vector3.new(1718, 272, -2600), graves = {5, 6} },
+        { pos = Vector3.new(1700, 272, -2600), graves = {7, 8} },
     },
 }
 
@@ -502,37 +510,6 @@ local function hasShovel()
     return ok and count and count > 0
 end
 
--- Gives each waypoint the closest unlocked graves that no earlier waypoint has claimed
-local function buildGraveAssignments()
-    local taken = {}
-    local assignments = {}
-
-    for i, stop in ipairs(GRAVE_CONFIG.ROUTE) do
-        local candidates = {}
-        for slot = 1, GRAVE_CONFIG.MAX_GRAVES do
-            if not taken[slot] and getGraveStatus(slot) ~= "Locked" then
-                local dp = getDigPoint(slot)
-                if dp then
-                    local dx = dp.WorldPosition.X - stop.pos.X
-                    local dz = dp.WorldPosition.Z - stop.pos.Z
-                    table.insert(candidates, { slot = slot, dist = math.sqrt(dx * dx + dz * dz) })
-                end
-            end
-        end
-
-        table.sort(candidates, function(a, b) return a.dist < b.dist end)
-
-        local slots = {}
-        for j = 1, math.min(GRAVE_CONFIG.PER_STOP, #candidates) do
-            table.insert(slots, candidates[j].slot)
-            taken[candidates[j].slot] = true
-        end
-        assignments[i] = slots
-    end
-
-    return assignments
-end
-
 local function anyGraveRefilling()
     for slot = 1, GRAVE_CONFIG.MAX_GRAVES do
         if getGraveStatus(slot) == "Refilling" then
@@ -542,21 +519,31 @@ local function anyGraveRefilling()
     return false
 end
 
--- Digs the assigned graves at a stop until none are ready (or the timeout hits)
-local function tendGraves(slots)
+-- Digs the listed graves at a stop. If a grave is out of dig range, walks to it first.
+-- Returns when none of the listed graves are ready anymore, or the timeout hits.
+local function tendGraves(graveSlots)
     local deadline = os.clock() + GRAVE_CONFIG.WAIT_TIMEOUT
+    local function enabled() return GRAVE_CONFIG.ENABLED end
 
-    while GRAVE_CONFIG.ENABLED and os.clock() < deadline do
+    while enabled() and os.clock() < deadline do
         if not hasShovel() then return false end
 
         local pending = false
-        for _, slot in ipairs(slots) do
+        for _, slot in ipairs(graveSlots) do
             if getGraveStatus(slot) == "Ready" then
                 pending = true
                 local dp = getDigPoint(slot)
                 local root = getRoot()
-                if dp and root and (root.Position - dp.WorldPosition).Magnitude <= GRAVE_CONFIG.DIG_RANGE then
-                    invokeGrave("dig", slot)
+
+                if dp and root then
+                    if (root.Position - dp.WorldPosition).Magnitude > GRAVE_CONFIG.DIG_RANGE then
+                        walkTo(dp.WorldPosition, 5, enabled)
+                        root = getRoot()
+                    end
+
+                    if root and (root.Position - dp.WorldPosition).Magnitude <= GRAVE_CONFIG.DIG_RANGE then
+                        invokeGrave("dig", slot)
+                    end
                 end
             end
         end
@@ -571,21 +558,21 @@ local function tendGraves(slots)
     return false
 end
 
--- Teleports once to the graveyard entrance, then walks each stop and digs its graves.
--- Equips the scythe again once every stop is finished.
+-- Teleports to the graveyard entrance, equips the shovel, walks each stop and digs its graves,
+-- then equips the scythe once every stop is finished.
 local function runGraveRoute()
-    local assignments = buildGraveAssignments()
-
     teleportTo(GRAVE_CONFIG.TELEPORT_POS)
+    task.wait(0.3)
+    equipShovel()
     task.wait(0.3)
 
     local function enabled() return GRAVE_CONFIG.ENABLED end
 
-    for i, stop in ipairs(GRAVE_CONFIG.ROUTE) do
+    for _, stop in ipairs(GRAVE_CONFIG.ROUTE) do
         if not GRAVE_CONFIG.ENABLED then return end
 
         walkTo(stop.pos, 5, enabled)
-        tendGraves(assignments[i])
+        tendGraves(stop.graves)
     end
 
     equipScythe()
@@ -1656,7 +1643,17 @@ task.spawn(function()
             task.wait(1)
         elseif state == "ready" and not atLobby then
             goToLobby()
+            task.spawn(function()
+                game:GetService("ExperienceService"):LaunchExperience({
+                    placeId = 131367064230486,
+                })
+            end)
             task.wait(10)
+            task.spawn(function()
+                game:GetService("ExperienceService"):LaunchExperience({
+                    placeId = 131367064230486,
+                })
+            end)
         elseif state == "ready" and atLobby then
             runRoute(route)
         elseif atLobby then
