@@ -1502,7 +1502,7 @@ task.spawn(function()
         elseif not ready and atLobby then
             tryWorldBossEnter()
         else
-            runLoadstringOnce()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua"))()
         end
 
         task.wait(0.5)
