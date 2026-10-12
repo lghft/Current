@@ -6,6 +6,10 @@ local CollectionService = game:GetService("CollectionService")
 local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
+while not player do
+    task.wait()
+    player = Players.LocalPlayer
+end
 
 -- State
 local looping = false     -- Candy feed loop
@@ -16,9 +20,9 @@ local connections = {}
 -- Decision settings
 -- =========================
 local LOBBY_PLACE_ID = 131367064230486
-local LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua"       -- Paste the script URL here. Runs once, only outside the lobby when nothing is ready.
+local LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua"  -- Runs once, only outside the lobby when nothing is ready
 local WORLDBOSS_INTERVAL = 5    -- Minimum seconds between WorldBossEnter fires
-local loadstringRan = false
+local UNKNOWN_TIMEOUT = 15      -- Seconds a system can stay "unknown" before it's treated as not ready
 local lastWorldBossFire = 0
 
 -- =========================
@@ -50,6 +54,30 @@ end
 local function getHumanoid()
     local char = player.Character
     return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+-- True once the game has loaded, the character exists, and the PlayerGui is ready
+local function isGameReady()
+    if not game:IsLoaded() then return false end
+    if not player:FindFirstChild("PlayerGui") then return false end
+    local char = player.Character
+    return char ~= nil and char:FindFirstChild("HumanoidRootPart") ~= nil
+end
+
+-- Waits until the game is ready, then a short settle time so the teleport overlay has cleared.
+-- Returns false if the timeout hits.
+local function waitForGameReady(timeout)
+    local deadline = os.clock() + (timeout or 60)
+    while running and os.clock() < deadline do
+        if isGameReady() then
+            task.wait(2)
+            if isGameReady() then
+                return true
+            end
+        end
+        task.wait(0.5)
+    end
+    return false
 end
 
 local function formatLeft(seconds)
@@ -88,11 +116,27 @@ local function inLobby()
     return game.PlaceId == LOBBY_PLACE_ID
 end
 
--- Launches the lobby experience (uses the exact call you provided)
+-- Launches the lobby experience. Tries the service through FindService first,
+-- then GetService, since the plain GetService call returned nil in this context.
 local function goToLobby()
+    local service = game:FindService("ExperienceService")
+    if not service then
+        local ok, result = pcall(function()
+            return game:GetService("ExperienceService")
+        end)
+        if ok then
+            service = result
+        end
+    end
+
+    if not service then
+        warn("[Candy Loop] ExperienceService is not available in this script's context")
+        return false
+    end
+
     local ok, err = pcall(function()
-        game:GetService("ExperienceService"):LaunchExperience({
-            placeId = 131367064230486,
+        service:LaunchExperience({
+            placeId = LOBBY_PLACE_ID,
         })
     end)
     if not ok then
@@ -113,10 +157,13 @@ local function tryWorldBossEnter()
     end
 end
 
--- Runs the loadstring URL once. Does nothing if the URL is empty.
+-- Runs the loadstring URL once per game session, even if this script is executed again.
+-- The flag lives in the executor's global environment so it survives re-execution.
 local function runLoadstringOnce()
-    if loadstringRan or LOADSTRING_URL == "" then return end
-    loadstringRan = true
+    local env = (getgenv and getgenv()) or _G
+    if env.CANDY_LOADSTRING_RAN or LOADSTRING_URL == "" then return end
+    env.CANDY_LOADSTRING_RAN = true
+
     local ok, err = pcall(function()
         loadstring(game:HttpGet(LOADSTRING_URL))()
     end)
@@ -176,14 +223,29 @@ local pumpkinState = {
     stalledUntil = 0,
 }
 
+-- Remotes are looked up separately from the module, so a missing remote
+-- doesn't stop the garden data (and the stats) from loading.
 local PumpkinGarden, ScytheSwipe
-local remotesOk = pcall(function()
-    local RemoteFunction = require(ReplicatedStorage.Modules.Remotes.RemoteFunction)
-    PumpkinGarden = RemoteFunction.new("PumpkinGarden")
-    ScytheSwipe = ReplicatedStorage.Modules.Remotes.RemoteEvent.ScytheSwipe
-end)
+
+do
+    local okRF, RemoteFunction = pcall(function()
+        return require(ReplicatedStorage.Modules.Remotes.RemoteFunction)
+    end)
+    if okRF and RemoteFunction then
+        local okPG, pg = pcall(function()
+            return RemoteFunction.new("PumpkinGarden")
+        end)
+        if okPG then PumpkinGarden = pg end
+    end
+
+    local okSwipe, swipe = pcall(function()
+        return ReplicatedStorage.Modules.Remotes.RemoteEvent:FindFirstChild("ScytheSwipe")
+    end)
+    if okSwipe then ScytheSwipe = swipe end
+end
 
 local function invokeGarden(action, slot)
+    if not pumpkinState.pumpkinGarden then return { ok = false } end
     local ok, success, data = pcall(function()
         return pumpkinState.pumpkinGarden:Invoke(action, slot):await()
     end)
@@ -194,12 +256,10 @@ local function invokeGarden(action, slot)
 end
 
 local function initPumpkinModule()
-    if not remotesOk then return false end
-
     local ok, pumpkinModule = pcall(function()
         return require(ReplicatedStorage.Modules.PumpkinPatch)
     end)
-    if not ok then return false end
+    if not ok or type(pumpkinModule) ~= "table" then return false end
 
     pumpkinState.pumpkinModule = pumpkinModule
     pcall(function()
@@ -258,19 +318,6 @@ local function getGrowPoint(slot)
     return nil
 end
 
--- True when no slot on the route is still growing
-local function isPumpkinRouteReady()
-    for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
-        for _, slot in ipairs(stop.slots) do
-            local st = getSlotState(slot)
-            if st == GROWING_STATE or st == "Unknown" then
-                return false
-            end
-        end
-    end
-    return true
-end
-
 local function anyPumpkinGrowing()
     for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
         for _, slot in ipairs(stop.slots) do
@@ -294,7 +341,9 @@ local function carveSlots(slots)
 
     if #targets == 0 then return end
 
-    ScytheSwipe:FireServer(targets[1].pos)
+    if ScytheSwipe then
+        ScytheSwipe:FireServer(targets[1].pos)
+    end
     task.wait(PUMPKIN_CONFIG.SWIPE_SETTLE)
 
     for _, t in ipairs(targets) do
@@ -482,23 +531,6 @@ local function buildGraveAssignments()
     end
 
     return assignments
-end
-
--- True when no unlocked grave is refilling and at least one is ready
-local function isGraveRouteReady()
-    if not hasShovel() then return false end
-
-    local sawReady = false
-    for slot = 1, GRAVE_CONFIG.MAX_GRAVES do
-        local st = getGraveStatus(slot)
-        if st == "Refilling" or st == "Unknown" then
-            return false
-        end
-        if st == "Ready" then
-            sawReady = true
-        end
-    end
-    return sawReady
 end
 
 local function anyGraveRefilling()
@@ -719,34 +751,104 @@ local function runTrickRoute()
             failed[best] = true
         end
 
-        task.wait(TRICK_CONFIG.KNOCK_GAP)
+        task.wait(TRICK_CONFIG.KNOCK_GAP or 0)
     end
 end
 
 -- =========================
--- Ready check and route runner
+-- Ready check
 -- =========================
--- Returns "pumpkin", "grave", "trick", or nil. Order is the priority.
-local function getReadyRoute()
-    if PUMPKIN_CONFIG.ENABLED and os.clock() >= pumpkinState.stalledUntil then
-        if not pumpkinState.initialized then initPumpkinModule() end
-        if pumpkinState.initialized and isPumpkinRouteReady() then
-            return "pumpkin"
+-- Each system reports one of three states:
+--   "ready"    - it has work to do
+--   "notready" - it's loaded and has nothing to do (or is disabled/stalled)
+--   "unknown"  - its module or data isn't loaded yet
+-- "unknown" blocks the world boss and loadstring branches only until UNKNOWN_TIMEOUT
+-- has passed, so a system that never loads outside the lobby can't stop them forever.
+
+local function pumpkinStatus()
+    if not PUMPKIN_CONFIG.ENABLED then return "notready" end
+    if os.clock() < pumpkinState.stalledUntil then return "notready" end
+
+    if not pumpkinState.initialized then
+        initPumpkinModule()
+        if not pumpkinState.initialized then return "unknown" end
+    end
+
+    local notReady = false
+    for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
+        for _, slot in ipairs(stop.slots) do
+            local st = getSlotState(slot)
+            if st == "Unknown" then
+                return "unknown"
+            elseif st == GROWING_STATE then
+                notReady = true
+            end
         end
     end
 
-    if GRAVE_CONFIG.ENABLED and os.clock() >= graveState.stalledUntil then
-        if not graveState.initialized then initGraveModule() end
-        if graveState.initialized and isGraveRouteReady() then
-            return "grave"
+    return notReady and "notready" or "ready"
+end
+
+local function graveStatus()
+    if not GRAVE_CONFIG.ENABLED then return "notready" end
+    if os.clock() < graveState.stalledUntil then return "notready" end
+
+    if not graveState.initialized then
+        initGraveModule()
+        if not graveState.initialized then return "unknown" end
+    end
+
+    if not hasShovel() then return "notready" end
+
+    local sawReady = false
+    for slot = 1, GRAVE_CONFIG.MAX_GRAVES do
+        local st = getGraveStatus(slot)
+        if st == "Unknown" then
+            return "unknown"
+        elseif st == "Refilling" then
+            return "notready"
+        elseif st == "Ready" then
+            sawReady = true
         end
     end
 
-    if TRICK_CONFIG.ENABLED and #getReadyDoors() > 0 then
-        return "trick"
-    end
+    return sawReady and "ready" or "notready"
+end
 
-    return nil
+local function trickStatus()
+    if not TRICK_CONFIG.ENABLED then return "notready" end
+    if #getReadyDoors() > 0 then return "ready" end
+    return "notready"
+end
+
+-- Tracks how long the loop has been blocked by an unknown system.
+local unknownSince = nil
+local function unknownTimedOut(isBlocked)
+    if not isBlocked then
+        unknownSince = nil
+        return false
+    end
+    unknownSince = unknownSince or os.clock()
+    return os.clock() - unknownSince >= UNKNOWN_TIMEOUT
+end
+
+-- Returns a state and the route name. Priority: pumpkin > graveyard > trick.
+local function decideRoute()
+    local pumpkin = pumpkinStatus()
+    local grave = graveStatus()
+
+    if pumpkin == "ready" then return "ready", "pumpkin" end
+    if grave == "ready" then return "ready", "grave" end
+
+    local blocked = pumpkin == "unknown" or grave == "unknown"
+    if blocked and not unknownTimedOut(true) then
+        return "unknown", nil
+    end
+    unknownTimedOut(blocked)
+
+    if trickStatus() == "ready" then return "ready", "trick" end
+
+    return "notready", nil
 end
 
 -- Runs one route. Only called when inside the lobby.
@@ -769,6 +871,7 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CandyFeedGui"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 10000
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -1079,106 +1182,8 @@ end
 local trickStatLabel = makeSingleStat("Trick or Treat", 5)
 
 -- =========================
--- Door ESP (Highlight)
+-- Unload button and confirmation (built before anything that could wait or fail)
 -- =========================
-local ESP_ENABLED = true
-local espHighlights = {}
-local espConnections = {}
-local doorsFolder = workspace:WaitForChild("TrickOrTreatDoors", 10)
-
-local function removeESP(door)
-    if espHighlights[door] then
-        espHighlights[door]:Destroy()
-        espHighlights[door] = nil
-    end
-end
-
-local function createESP(door)
-    if not ESP_ENABLED or espHighlights[door] then return end
-
-    door.Transparency = 0
-
-    local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.fromRGB(255, 140, 0)
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.FillTransparency = 0.5
-    highlight.OutlineTransparency = 0
-    highlight.Parent = door
-
-    espHighlights[door] = highlight
-end
-
-local function checkDoor(door)
-    if not door:IsA("BasePart") then return end
-
-    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if not prompt or not ESP_ENABLED then
-        removeESP(door)
-        return
-    end
-
-    if (prompt.ObjectText or ""):lower():find("trick") then
-        createESP(door)
-    else
-        removeESP(door)
-    end
-end
-
-local function setupDoor(door)
-    checkDoor(door)
-
-    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if prompt then
-        table.insert(espConnections, prompt.Changed:Connect(function()
-            checkDoor(door)
-        end))
-    end
-
-    table.insert(espConnections, door.ChildRemoved:Connect(function(child)
-        if child:IsA("ProximityPrompt") then
-            checkDoor(door)
-        end
-    end))
-end
-
-local function setESP(on)
-    ESP_ENABLED = on
-    if not doorsFolder then return end
-
-    if on then
-        for _, door in ipairs(doorsFolder:GetChildren()) do
-            checkDoor(door)
-        end
-    else
-        for door in pairs(espHighlights) do
-            removeESP(door)
-        end
-    end
-end
-
-local function clearESP()
-    ESP_ENABLED = false
-    for _, conn in ipairs(espConnections) do
-        conn:Disconnect()
-    end
-    table.clear(espConnections)
-    for door in pairs(espHighlights) do
-        removeESP(door)
-    end
-end
-
-if doorsFolder then
-    for _, door in ipairs(doorsFolder:GetChildren()) do
-        setupDoor(door)
-    end
-    table.insert(espConnections, doorsFolder.ChildAdded:Connect(function(door)
-        task.wait(0.1)
-        setupDoor(door)
-        checkDoor(door)
-    end))
-end
-
--- Small unload button in the top-right corner
 local unloadButton = Instance.new("TextButton")
 unloadButton.Name = "UnloadButton"
 unloadButton.Size = UDim2.new(0, 20, 0, 20)
@@ -1194,7 +1199,6 @@ local unloadCorner = Instance.new("UICorner")
 unloadCorner.CornerRadius = UDim.new(0, 6)
 unloadCorner.Parent = unloadButton
 
--- Confirmation popup
 local confirmFrame = Instance.new("Frame")
 confirmFrame.Name = "ConfirmFrame"
 confirmFrame.Size = UDim2.new(0, 240, 0, 120)
@@ -1254,6 +1258,122 @@ noButton.Parent = confirmFrame
 local noCorner = Instance.new("UICorner")
 noCorner.CornerRadius = UDim.new(0, 6)
 noCorner.Parent = noButton
+
+-- =========================
+-- Door ESP (Highlight) - never blocks. If the doors folder isn't loaded yet, it's attached when it appears.
+-- =========================
+local ESP_ENABLED = true
+local espHighlights = {}
+local espConnections = {}
+local doorsFolder = nil
+
+local function removeESP(door)
+    if espHighlights[door] then
+        espHighlights[door]:Destroy()
+        espHighlights[door] = nil
+    end
+end
+
+local function createESP(door)
+    if not ESP_ENABLED or espHighlights[door] then return end
+
+    door.Transparency = 0
+
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.fromRGB(255, 140, 0)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = door
+
+    espHighlights[door] = highlight
+end
+
+local function checkDoor(door)
+    if not door:IsA("BasePart") then return end
+
+    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if not prompt or not ESP_ENABLED then
+        removeESP(door)
+        return
+    end
+
+    if (prompt.ObjectText or ""):lower():find("trick") then
+        createESP(door)
+    else
+        removeESP(door)
+    end
+end
+
+local function setupDoor(door)
+    checkDoor(door)
+
+    local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt then
+        table.insert(espConnections, prompt.Changed:Connect(function()
+            checkDoor(door)
+        end))
+    end
+
+    table.insert(espConnections, door.ChildRemoved:Connect(function(child)
+        if child:IsA("ProximityPrompt") then
+            checkDoor(door)
+        end
+    end))
+end
+
+local function attachDoorsFolder(folder)
+    if doorsFolder then return end
+    doorsFolder = folder
+
+    for _, door in ipairs(folder:GetChildren()) do
+        setupDoor(door)
+    end
+    table.insert(espConnections, folder.ChildAdded:Connect(function(door)
+        task.wait(0.1)
+        setupDoor(door)
+        checkDoor(door)
+    end))
+end
+
+local function setESP(on)
+    ESP_ENABLED = on
+    if not doorsFolder then return end
+
+    if on then
+        for _, door in ipairs(doorsFolder:GetChildren()) do
+            checkDoor(door)
+        end
+    else
+        for door in pairs(espHighlights) do
+            removeESP(door)
+        end
+    end
+end
+
+local function clearESP()
+    ESP_ENABLED = false
+    for _, conn in ipairs(espConnections) do
+        conn:Disconnect()
+    end
+    table.clear(espConnections)
+    for door in pairs(espHighlights) do
+        removeESP(door)
+    end
+end
+
+-- Attach now if the folder exists, otherwise attach when it's added to the workspace
+do
+    local existing = workspace:FindFirstChild("TrickOrTreatDoors")
+    if existing then
+        attachDoorsFolder(existing)
+    end
+    table.insert(espConnections, workspace.ChildAdded:Connect(function(child)
+        if child.Name == "TrickOrTreatDoors" and not doorsFolder then
+            attachDoorsFolder(child)
+        end
+    end))
+end
 
 -- =========================
 -- Dragging
@@ -1370,6 +1490,14 @@ table.insert(connections, espButton.MouseButton1Click:Connect(function()
     end
 end))
 
+table.insert(connections, unloadButton.MouseButton1Click:Connect(function()
+    confirmFrame.Visible = true
+end))
+
+table.insert(connections, noButton.MouseButton1Click:Connect(function()
+    confirmFrame.Visible = false
+end))
+
 -- =========================
 -- Stats refresh
 -- =========================
@@ -1447,19 +1575,45 @@ local function refreshGraveStats()
     end
 end
 
+-- Reads the Trick or Treat module's daily data, so it works from any place.
+-- A door counts as ready when it hasn't been knocked today.
 local function refreshTrickStats()
     local label = trickStatLabel
-    local folder = workspace:FindFirstChild("TrickOrTreatDoors")
 
-    if not folder or #folder:GetChildren() == 0 then
+    local okMod, TrickMod = pcall(function()
+        return require(ReplicatedStorage.Modules.TrickOrTreat)
+    end)
+    local okDoors, doors = pcall(function()
+        return require(ReplicatedStorage.Modules.TownGhosts.Config).DOORS
+    end)
+    if not okMod or not okDoors or type(doors) ~= "table" then
         label.Text = "Unavailable"
         label.TextColor3 = Color3.fromRGB(170, 170, 170)
         return
     end
 
-    local ready = #getReadyDoors()
+    local okData, data = pcall(function()
+        return TrickMod.atom()
+    end)
+    if not okData or type(data) ~= "table" then
+        label.Text = "Unavailable"
+        label.TextColor3 = Color3.fromRGB(170, 170, 170)
+        return
+    end
+
+    local total, knocked = 0, 0
+    for i, door in pairs(doors) do
+        if not door.gone then
+            total = total + 1
+            if TrickMod.visited(data, i) then
+                knocked = knocked + 1
+            end
+        end
+    end
+
+    local ready = total - knocked
     if ready > 0 then
-        label.Text = "Ready: " .. ready .. (ready == 1 and " door" or " doors")
+        label.Text = "Ready: " .. ready .. " of " .. total .. " doors"
         label.TextColor3 = Color3.fromRGB(140, 255, 120)
     else
         local secondsLeft = 86400 - os.time() % 86400
@@ -1484,22 +1638,28 @@ task.spawn(function()
     end
 end)
 
--- Decision loop. Every pass:
---   ready + outside lobby      -> teleport to lobby
+-- Decision loop:
+--   unknown                    -> wait (up to UNKNOWN_TIMEOUT, then treated as not ready)
+--   ready + outside lobby      -> teleport to lobby, then wait for the load
 --   ready + inside lobby       -> run the highest-priority ready route
 --   not ready + inside lobby   -> fire WorldBossEnter (throttled)
 --   not ready + outside lobby  -> run the loadstring URL once
 task.spawn(function()
     while running do
-        local ready = getReadyRoute()
+        -- Don't make any decision while the teleport screen is still up
+        waitForGameReady(60)
+
+        local state, route = decideRoute()
         local atLobby = inLobby()
 
-        if ready and not atLobby then
+        if state == "unknown" then
+            task.wait(1)
+        elseif state == "ready" and not atLobby then
             goToLobby()
-            task.wait(10)  -- give the teleport time to start before checking again
-        elseif ready and atLobby then
-            runRoute(ready)
-        elseif not ready and atLobby then
+            task.wait(10)
+        elseif state == "ready" and atLobby then
+            runRoute(route)
+        elseif atLobby then
             tryWorldBossEnter()
         else
             runLoadstringOnce()
@@ -1522,7 +1682,7 @@ task.spawn(function()
 end)
 
 -- =========================
--- Unload confirmation
+-- Unload
 -- =========================
 local function unload()
     running = false
@@ -1537,14 +1697,6 @@ local function unload()
     table.clear(connections)
     screenGui:Destroy()
 end
-
-table.insert(connections, unloadButton.MouseButton1Click:Connect(function()
-    confirmFrame.Visible = true
-end))
-
-table.insert(connections, noButton.MouseButton1Click:Connect(function()
-    confirmFrame.Visible = false
-end))
 
 table.insert(connections, yesButton.MouseButton1Click:Connect(function()
     unload()
