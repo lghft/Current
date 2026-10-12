@@ -7,7 +7,9 @@
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 task.wait(1)
-
+if game.Players.LocalPlayer.UserId ~= 1588829513 then
+    return
+end
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -104,10 +106,10 @@ local PRESETS = {
     },
     Reaper = {
         [1] = {
-            CFrame.new(10046.2470703125, -118.54788208007812, -3.0180532932281494),
-            CFrame.new(10046.05078125, -118.54788208007812, -6.52520751953125),
+            CFrame.new(9954, 3, -0),
+            CFrame.new(9957, 3, -15),
         },
-        [2] = { CFrame.new(10036.3515625, -118.26579284667969, -7.5256004333496094) },
+        [2] = { CFrame.new(9969, 3, -8) },
     },
 }
 
@@ -338,7 +340,7 @@ local function PlaceInSlot(boss, slotNum, spotIndex)
 
     local cost = GetTowerCost(uid, 1)
     if cost > 0 and not WaitForCash(cost, CONFIG.TowerPlacer.CashTimeout) then
-        warn("[AutoFarm] " .. BossName(boss) .. " slot " .. slotNum .. ": timed out waiting for $" .. tostring(cost))
+        --warn("[AutoFarm] " .. BossName(boss) .. " slot " .. slotNum .. ": timed out waiting for $" .. tostring(cost))
         release()
         return
     end
@@ -357,7 +359,7 @@ local function PlaceInSlot(boss, slotNum, spotIndex)
         data.placing = false
         data.lastPlace = tick()
     else
-        warn("[AutoFarm] " .. BossName(boss) .. " slot " .. slotNum .. " placement failed: " .. tostring(result))
+        --warn("[AutoFarm] " .. BossName(boss) .. " slot " .. slotNum .. " placement failed: " .. tostring(result))
         release()
     end
 end
@@ -431,7 +433,7 @@ function TowerUpgrader:Run()
         local cost = GetTowerCost(target.uid, nextLevel)
 
         if cost > 0 and not WaitForCash(cost, CONFIG.TowerUpgrade.CashTimeout) then
-            warn("[AutoFarm] Upgrade to level " .. nextLevel .. " timed out waiting for $" .. tostring(cost))
+            --warn("[AutoFarm] Upgrade to level " .. nextLevel .. " timed out waiting for $" .. tostring(cost))
             self.Busy = false
             return
         end
