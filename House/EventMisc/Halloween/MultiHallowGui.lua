@@ -16,7 +16,7 @@ local connections = {}
 -- Decision settings
 -- =========================
 local LOBBY_PLACE_ID = 131367064230486
-local LOADSTRING_URL = ""       -- Paste the script URL here. Runs once, only outside the lobby when nothing is ready.
+local LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua"       -- Paste the script URL here. Runs once, only outside the lobby when nothing is ready.
 local WORLDBOSS_INTERVAL = 5    -- Minimum seconds between WorldBossEnter fires
 local loadstringRan = false
 local lastWorldBossFire = 0
@@ -1502,7 +1502,7 @@ task.spawn(function()
         elseif not ready and atLobby then
             tryWorldBossEnter()
         else
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua"))()
+            runLoadstringOnce()
         end
 
         task.wait(0.5)
