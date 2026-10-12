@@ -211,6 +211,7 @@ local PUMPKIN_CONFIG = {
     STEP_WAIT = 0.25,
     WAIT_TIMEOUT = 10,
     SWIPE_SETTLE = 0.05,
+    CARVE_RANGE = 18,         -- Must match the server's CARVE_RANGE. Carves outside this are rejected.
     STALL_WAIT = 30,          -- If a route starts nothing growing, wait before retrying
     MAX_PLOTS = 8,
     TELEPORT_POS = Vector3.new(3506, 272, -456),
@@ -337,25 +338,50 @@ local function anyPumpkinGrowing()
     return false
 end
 
--- Sends one swipe, then carves every grown slot in the list
+-- Carves the grown plots in `slots`, matching the standalone script:
+--   * only plots within CARVE_RANGE of the character are carved, since the server rejects the rest
+--   * a plot that's out of range is walked to first
+--   * one swipe is sent at the first in-range plot, then the carves go out in parallel
 local function carveSlots(slots)
+    local enabled = function() return PUMPKIN_CONFIG.ENABLED end
     local targets = {}
+
     for _, slot in ipairs(slots) do
         local growPoint = getGrowPoint(slot)
-        if growPoint then
-            table.insert(targets, { slot = slot, pos = growPoint.WorldPosition })
+        if not growPoint then
+            print("[Candy Loop] carve: no grow point for slot " .. slot)
+        else
+            local root = getRoot()
+            if root and (root.Position - growPoint.WorldPosition).Magnitude > PUMPKIN_CONFIG.CARVE_RANGE then
+                walkTo(growPoint.WorldPosition, 4, enabled)
+                root = getRoot()
+            end
+
+            if root and (root.Position - growPoint.WorldPosition).Magnitude <= PUMPKIN_CONFIG.CARVE_RANGE then
+                table.insert(targets, { slot = slot, pos = growPoint.WorldPosition })
+            else
+                print("[Candy Loop] carve: slot " .. slot .. " is still out of range")
+            end
         end
     end
 
-    if #targets == 0 then return end
+    if #targets == 0 then
+        return
+    end
 
-    if ScytheSwipe then
+    if not ScytheSwipe then
+        warn("[Candy Loop] carve: ScytheSwipe remote is missing, the server will reject the carve")
+    else
         ScytheSwipe:FireServer(targets[1].pos)
     end
     task.wait(PUMPKIN_CONFIG.SWIPE_SETTLE)
 
     for _, t in ipairs(targets) do
-        task.spawn(invokeGarden, "carve", t.slot)
+        task.spawn(function()
+            local result = invokeGarden("carve", t.slot)
+            print("[Candy Loop] carve slot " .. t.slot .. ": ok=" .. tostring(result.ok)
+                .. " carve=" .. tostring(result.carve) .. " message=" .. tostring(result.message))
+        end)
     end
 end
 
