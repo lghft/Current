@@ -106,8 +106,8 @@ local PRESETS = {
     },
     Reaper = {
         [1] = {
-            CFrame.new(9954, 3, -0),
-            CFrame.new(9957, 3, -15),
+            CFrame.new(9964, 3, 25),
+            CFrame.new(9955, 3, 8),
         },
         [2] = { CFrame.new(9969, 3, -8) },
     },
