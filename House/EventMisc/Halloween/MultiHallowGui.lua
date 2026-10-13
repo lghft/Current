@@ -1,3 +1,4 @@
+repeat task.wait() until game:IsLoaded()
 -- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -6,6 +7,10 @@ local CollectionService = game:GetService("CollectionService")
 local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
+if player.UserId ~= 1588829513 then
+    return
+end
+
 while not player do
     task.wait()
     player = Players.LocalPlayer
@@ -15,6 +20,7 @@ end
 local looping = false     -- Candy feed loop
 local running = true      -- Master flag for all loops
 local connections = {}
+local statusLabel = nil   -- Assigned when the GUI is built (declared early so helpers can use it)
 
 -- =========================
 -- Decision settings
@@ -46,6 +52,10 @@ end
 -- =========================
 -- Shared helpers
 -- =========================
+local function round(num)
+    return math.floor(num + 0.5)
+end
+
 local function getRoot()
     local char = player.Character
     return char and char:FindFirstChild("HumanoidRootPart")
@@ -78,6 +88,37 @@ local function waitForGameReady(timeout)
         task.wait(0.5)
     end
     return false
+end
+
+-- True while Roblox is showing the "Gameplay Paused" overlay (e.g. after a long teleport)
+local function isGameplayPaused()
+    local ok, paused = pcall(function()
+        return player.GameplayPaused
+    end)
+    if ok and type(paused) == "boolean" then
+        return paused
+    end
+
+    -- Fallback: look for a visible "Gameplay Paused" label in PlayerGui
+    local gui = player:FindFirstChild("PlayerGui")
+    if gui then
+        for _, obj in ipairs(gui:GetDescendants()) do
+            if obj:IsA("TextLabel") and obj.Visible
+                and (obj.Text or ""):lower():find("gameplay paused", 1, true) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Waits until the pause overlay is gone. Returns false if the timeout hits or the script is unloaded.
+local function waitForGameplayResumed(timeout)
+    local deadline = os.clock() + (timeout or 30)
+    while running and isGameplayPaused() and os.clock() < deadline do
+        task.wait(0.1)
+    end
+    return running and not isGameplayPaused()
 end
 
 local function formatLeft(seconds)
@@ -200,30 +241,31 @@ local function walkTo(pos, timeout, isEnabled)
 end
 
 -- =========================
--- Pumpkin auto (route based)
+-- Pumpkin auto
+-- Each pass: snapshot -> pick Carved (parallel) -> snapshot -> carve Grown (one swipe, parallel)
+--            -> snapshot -> plant Empty (parallel)
 -- =========================
 local PUMPKIN_CONFIG = {
     ENABLED = true,
     AUTO_PLANT = true,
     AUTO_CARVE = true,
     AUTO_PICK = true,
-    ROUTE_COOLDOWN = 2,
-    STEP_WAIT = 0.25,
-    WAIT_TIMEOUT = 10,
-    SWIPE_SETTLE = 0.05,
-    CARVE_RANGE = 18,         -- Must match the server's CARVE_RANGE. Carves outside this are rejected.
-    STALL_WAIT = 30,          -- If a route starts nothing growing, wait before retrying
+    ROUTE_COOLDOWN = 0.5,
+    SWIPE_SETTLE = 0.05,      -- Short pause so the swipe reaches the server before the carves
+    SETTLE_WAIT = 0.15,       -- Pause after the batches before checking whether anything changed
+    BATCH_TIMEOUT = 5,        -- Max seconds to wait for one parallel batch
+    CARVE_RANGE = 18,         -- Must match the server's CARVE_RANGE
+    PATH_TIMEOUT = 25,        -- Max seconds to spend pathing to one plot
+    PATH_RETRIES = 3,         -- Recompute the path this many times if a waypoint is blocked
+    WAYPOINT_TIMEOUT = 4,     -- Max seconds to reach one waypoint before treating it as blocked
+    DEBUG = true,             -- Prints pumpkin path status to the console
+    STALL_WAIT = 30,          -- If a pass changes nothing, wait before trying again
     MAX_PLOTS = 8,
     TELEPORT_POS = Vector3.new(3506, 272, -456),
-    ROUTE = {
-        { pos = Vector3.new(3534, 272, -456), slots = {2, 8} },
-        { pos = Vector3.new(3554, 272, -455), slots = {3, 9} },
-        { pos = Vector3.new(3574, 272, -456), slots = {4, 10} },
-        { pos = Vector3.new(3594, 272, -455), slots = {5, 11} },
-    },
+    TELEPORT_RANGE = 60,      -- Only teleport to the patch entrance if we're farther than this from it
 }
 
-local GROWING_STATE = "Growing"   -- Change if the module uses a different name
+local GROWING_STATE = "Growing"
 
 local pumpkinState = {
     initialized = false,
@@ -231,6 +273,13 @@ local pumpkinState = {
     pumpkinModule = nil,
     stalledUntil = 0,
 }
+
+-- Logs pumpkin pathing details when PUMPKIN_CONFIG.DEBUG is on
+local function pumpkinLog(...)
+    if PUMPKIN_CONFIG.DEBUG then
+        print("[Candy Loop][Pumpkin]", ...)
+    end
+end
 
 -- Remotes are looked up separately from the module, so a missing remote
 -- doesn't stop the garden data (and the stats) from loading.
@@ -327,117 +376,290 @@ local function getGrowPoint(slot)
     return nil
 end
 
-local function anyPumpkinGrowing()
-    for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
-        for _, slot in ipairs(stop.slots) do
-            if getSlotState(slot) == GROWING_STATE then
-                return true
-            end
-        end
-    end
-    return false
+-- Distance from the character to a grow point (huge if there's no character)
+local function distToPlot(growPoint)
+    local root = getRoot()
+    if not root then return math.huge end
+    return (root.Position - growPoint.WorldPosition).Magnitude
 end
 
--- Carves the grown plots in `slots`, matching the standalone script:
---   * only plots within CARVE_RANGE of the character are carved, since the server rejects the rest
---   * a plot that's out of range is walked to first
---   * one swipe is sent at the first in-range plot, then the carves go out in parallel
-local function carveSlots(slots)
-    local enabled = function() return PUMPKIN_CONFIG.ENABLED end
-    local targets = {}
+local function inCarveRange(growPoint)
+    return distToPlot(growPoint) <= PUMPKIN_CONFIG.CARVE_RANGE
+end
 
-    for _, slot in ipairs(slots) do
-        local growPoint = getGrowPoint(slot)
-        if not growPoint then
-            print("[Candy Loop] carve: no grow point for slot " .. slot)
+-- Reads the garden once and returns every slot's state, so a pass doesn't re-read per slot
+local function snapshotStates()
+    local states = {}
+    local pumpkinModule = pumpkinState.pumpkinModule
+    local gardenState = getPumpkinGardenState()
+    for slot = 1, PUMPKIN_CONFIG.MAX_PLOTS do
+        local st = "Unknown"
+        if pumpkinModule and gardenState then
+            local ok, result = pcall(pumpkinModule.slotState, gardenState, slot)
+            if ok and result then st = result end
+        end
+        states[slot] = st
+    end
+    return states
+end
+
+-- Returns the slot numbers whose snapshot state matches
+local function slotsWhere(states, wanted)
+    local list = {}
+    for slot = 1, PUMPKIN_CONFIG.MAX_PLOTS do
+        if states[slot] == wanted then
+            table.insert(list, slot)
+        end
+    end
+    return list
+end
+
+-- Runs fn(item) for every item at the same time, then waits until they've all returned (or timed out)
+local function runParallel(items, fn)
+    if #items == 0 then return end
+    local remaining = #items
+    for _, item in ipairs(items) do
+        task.spawn(function()
+            pcall(fn, item)
+            remaining = remaining - 1
+        end)
+    end
+    local deadline = os.clock() + PUMPKIN_CONFIG.BATCH_TIMEOUT
+    while remaining > 0 and os.clock() < deadline do
+        task.wait()
+    end
+end
+
+-- Splits {slot, growPoint} entries into the ones in carve range and the ones that aren't
+local function splitByRange(list)
+    local inRange, outOfRange = {}, {}
+    for _, g in ipairs(list) do
+        if inCarveRange(g.growPoint) then
+            table.insert(inRange, g)
         else
-            local root = getRoot()
-            if root and (root.Position - growPoint.WorldPosition).Magnitude > PUMPKIN_CONFIG.CARVE_RANGE then
-                walkTo(growPoint.WorldPosition, 4, enabled)
-                root = getRoot()
+            table.insert(outOfRange, g)
+        end
+    end
+    return inRange, outOfRange
+end
+
+-- Formats a list of slot numbers for the status label, e.g. "2, 5"
+local function slotList(slots)
+    local parts = {}
+    for i, slot in ipairs(slots) do
+        parts[i] = tostring(slot)
+    end
+    return table.concat(parts, ", ")
+end
+
+-- Shows the current pumpkin action and the plots it's working on
+local function setPumpkinStatus(text, color)
+    if statusLabel then
+        statusLabel.Text = "Status: Pumpkin - " .. text
+        statusLabel.TextColor3 = color or Color3.fromRGB(140, 255, 120)
+    end
+end
+
+-- Picks every Carved plot, all at once. Returns true if any were attempted.
+local function pickReady(states)
+    if not PUMPKIN_CONFIG.AUTO_PICK then return false end
+    local list = slotsWhere(states, "Carved")
+    if #list == 0 then return false end
+
+    setPumpkinStatus("Picking plot" .. (#list > 1 and "s " or " ") .. slotList(list))
+    runParallel(list, function(slot)
+        invokeGarden("pick", slot)
+    end)
+    return true
+end
+
+-- Plants every Empty plot, all at once. Returns true if any were attempted.
+local function plantEmpty(states)
+    if not PUMPKIN_CONFIG.AUTO_PLANT then return false end
+    local list = slotsWhere(states, "Empty")
+    if #list == 0 then return false end
+
+    setPumpkinStatus("Planting plot" .. (#list > 1 and "s " or " ") .. slotList(list))
+    runParallel(list, function(slot)
+        invokeGarden("plant", slot)
+    end)
+    return true
+end
+
+-- Horizontal (XZ) distance from the root to a point, ignoring height
+local function horizDistTo(root, pos)
+    local dx = root.Position.X - pos.X
+    local dz = root.Position.Z - pos.Z
+    return math.sqrt(dx * dx + dz * dz)
+end
+
+-- Walks to a grow point along a PathfindingService path so the character goes around
+-- fences, buildings, and other obstacles. Stops as soon as the plot is in carve range.
+-- Recomputes the path if a waypoint is blocked. Returns true if the plot is in range.
+local function pathToPlot(growPoint)
+    local targetPos = growPoint.WorldPosition
+    local deadline = os.clock() + PUMPKIN_CONFIG.PATH_TIMEOUT
+
+    for attempt = 1, PUMPKIN_CONFIG.PATH_RETRIES do
+        if not PUMPKIN_CONFIG.ENABLED or os.clock() > deadline then
+            return inCarveRange(growPoint)
+        end
+        if inCarveRange(growPoint) then return true end
+
+        local humanoid = getHumanoid()
+        local root = getRoot()
+        if not humanoid or not root then return false end
+
+        local path = PathfindingService:CreatePath({
+            AgentRadius = 2,
+            AgentHeight = 5,
+            AgentCanJump = true,
+        })
+
+        local computed = pcall(function()
+            path:ComputeAsync(root.Position, targetPos)
+        end)
+
+        pumpkinLog("path attempt " .. attempt, "computed=" .. tostring(computed),
+            "status=" .. (computed and path.Status.Name or "error"))
+
+        if computed and path.Status == Enum.PathStatus.Success then
+            local waypoints = path:GetWaypoints()
+            local blocked = false
+
+            -- Waypoint 1 is the start position, so begin at 2
+            for i = 2, #waypoints do
+                if not PUMPKIN_CONFIG.ENABLED or os.clock() > deadline or not root.Parent then
+                    return inCarveRange(growPoint)
+                end
+                if inCarveRange(growPoint) then return true end
+
+                local wp = waypoints[i]
+                if wp.Action == Enum.PathWaypointAction.Jump then
+                    humanoid.Jump = true
+                end
+
+                humanoid:MoveTo(wp.Position)
+
+                local wpDeadline = os.clock() + PUMPKIN_CONFIG.WAYPOINT_TIMEOUT
+                local reached = false
+                while PUMPKIN_CONFIG.ENABLED and os.clock() < wpDeadline do
+                    if inCarveRange(growPoint) then return true end
+                    if horizDistTo(root, wp.Position) <= 4 then
+                        reached = true
+                        break
+                    end
+                    task.wait(0.1)
+                end
+
+                if not reached then
+                    blocked = true
+                    pumpkinLog("waypoint " .. i .. " blocked")
+                    break
+                end
             end
 
-            if root and (root.Position - growPoint.WorldPosition).Magnitude <= PUMPKIN_CONFIG.CARVE_RANGE then
-                table.insert(targets, { slot = slot, pos = growPoint.WorldPosition })
-            else
-                print("[Candy Loop] carve: slot " .. slot .. " is still out of range")
+            if not blocked then
+                return inCarveRange(growPoint)
             end
+        end
+
+        task.wait(0.3)
+    end
+
+    return inCarveRange(growPoint)
+end
+
+-- Walks toward a plot using pathfinding until it's inside carve range
+local function walkIntoRange(slot, growPoint)
+    setPumpkinStatus("Pathing to plot " .. slot, Color3.fromRGB(255, 205, 70))
+    return pathToPlot(growPoint)
+end
+
+-- Carves every Grown plot. If none are in range, paths to the closest ones until
+-- something is in range, then sends one swipe and carves everything in range at once.
+-- Returns true if a carve was attempted.
+local function carveGrown(states)
+    if not PUMPKIN_CONFIG.AUTO_CARVE then return false end
+
+    local grown = {}
+    for _, slot in ipairs(slotsWhere(states, "Grown")) do
+        local gp = getGrowPoint(slot)
+        if gp then
+            table.insert(grown, { slot = slot, growPoint = gp })
+        end
+    end
+    if #grown == 0 then return false end
+
+    local inRange, outOfRange = splitByRange(grown)
+
+    if #inRange == 0 and #outOfRange > 0 then
+        table.sort(outOfRange, function(a, b)
+            return distToPlot(a.growPoint) < distToPlot(b.growPoint)
+        end)
+        for _, g in ipairs(outOfRange) do
+            if not PUMPKIN_CONFIG.ENABLED then return false end
+            walkIntoRange(g.slot, g.growPoint)
+            inRange = splitByRange(grown)
+            if #inRange > 0 then break end
         end
     end
 
-    if #targets == 0 then
+    if #inRange == 0 then return false end
+
+    local carveSlots = {}
+    for _, g in ipairs(inRange) do
+        table.insert(carveSlots, g.slot)
+    end
+    setPumpkinStatus("Carving plot" .. (#carveSlots > 1 and "s " or " ") .. slotList(carveSlots))
+
+    if ScytheSwipe then
+        ScytheSwipe:FireServer(inRange[1].growPoint.WorldPosition)
+        task.wait(PUMPKIN_CONFIG.SWIPE_SETTLE)
+    end
+
+    runParallel(inRange, function(g)
+        invokeGarden("carve", g.slot)
+    end)
+    return true
+end
+
+-- Teleports to the patch if needed, waits for the "Gameplay Paused" overlay to clear,
+-- equips the scythe, then picks, carves, and plants. Re-reads the garden between steps.
+-- Only stalls when an action was attempted and nothing changed, so walking
+-- to a far plot doesn't count as a failed pass.
+local function runPumpkinRoute()
+    local before = table.concat(snapshotStates(), ",")
+
+    local root = getRoot()
+    if not root or (root.Position - PUMPKIN_CONFIG.TELEPORT_POS).Magnitude > PUMPKIN_CONFIG.TELEPORT_RANGE then
+        teleportTo(PUMPKIN_CONFIG.TELEPORT_POS)
+        task.wait(0.15)
+    end
+
+    if statusLabel then
+        statusLabel.Text = "Status: Pumpkin - Waiting for gameplay to resume"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 205, 70)
+    end
+    if not waitForGameplayResumed(30) then
         return
     end
 
-    if not ScytheSwipe then
-        warn("[Candy Loop] carve: ScytheSwipe remote is missing, the server will reject the carve")
-    else
-        ScytheSwipe:FireServer(targets[1].pos)
-    end
-    task.wait(PUMPKIN_CONFIG.SWIPE_SETTLE)
-
-    for _, t in ipairs(targets) do
-        task.spawn(function()
-            local result = invokeGarden("carve", t.slot)
-            print("[Candy Loop] carve slot " .. t.slot .. ": ok=" .. tostring(result.ok)
-                .. " carve=" .. tostring(result.carve) .. " message=" .. tostring(result.message))
-        end)
-    end
-end
-
--- Keeps working the two slots until both are growing (or the timeout hits)
-local function tendSlots(slots)
-    local deadline = os.clock() + PUMPKIN_CONFIG.WAIT_TIMEOUT
-
-    while PUMPKIN_CONFIG.ENABLED and os.clock() < deadline do
-        local allGrowing = true
-        local grownSlots = {}
-
-        for _, slot in ipairs(slots) do
-            local st = getSlotState(slot)
-            if st ~= GROWING_STATE then
-                allGrowing = false
-            end
-
-            if st == "Carved" and PUMPKIN_CONFIG.AUTO_PICK then
-                invokeGarden("pick", slot)
-            elseif st == "Empty" and PUMPKIN_CONFIG.AUTO_PLANT then
-                invokeGarden("plant", slot)
-            elseif st == "Grown" and PUMPKIN_CONFIG.AUTO_CARVE then
-                table.insert(grownSlots, slot)
-            end
-        end
-
-        if #grownSlots > 0 then
-            carveSlots(grownSlots)
-        end
-
-        if allGrowing then
-            return true
-        end
-
-        task.wait(PUMPKIN_CONFIG.STEP_WAIT)
-    end
-
-    return false
-end
-
--- Teleports once to the patch entrance, equips the scythe, then walks each stop and tends its two plots
-local function runPumpkinRoute()
-    teleportTo(PUMPKIN_CONFIG.TELEPORT_POS)
-    task.wait(0.3)
     equipScythe()
 
-    local function enabled() return PUMPKIN_CONFIG.ENABLED end
+    local attempted = false
 
-    for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
-        if not PUMPKIN_CONFIG.ENABLED then return end
+    if pickReady(snapshotStates()) then attempted = true end
+    if not PUMPKIN_CONFIG.ENABLED then return end
 
-        walkTo(stop.pos, 5, enabled)
-        tendSlots(stop.slots)
-    end
+    if carveGrown(snapshotStates()) then attempted = true end
+    if not PUMPKIN_CONFIG.ENABLED then return end
 
-    if not anyPumpkinGrowing() then
+    if plantEmpty(snapshotStates()) then attempted = true end
+
+    task.wait(PUMPKIN_CONFIG.SETTLE_WAIT)
+
+    if attempted and table.concat(snapshotStates(), ",") == before then
         pumpkinState.stalledUntil = os.clock() + PUMPKIN_CONFIG.STALL_WAIT
     end
 end
@@ -558,6 +780,11 @@ local function tendGraves(graveSlots)
         for _, slot in ipairs(graveSlots) do
             if getGraveStatus(slot) == "Ready" then
                 pending = true
+                if statusLabel then
+                    statusLabel.Text = "Status: Graveyard - Digging grave " .. slot
+                    statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+                end
+
                 local dp = getDigPoint(slot)
                 local root = getRoot()
 
@@ -594,8 +821,14 @@ local function runGraveRoute()
 
     local function enabled() return GRAVE_CONFIG.ENABLED end
 
-    for _, stop in ipairs(GRAVE_CONFIG.ROUTE) do
+    for stopIdx, stop in ipairs(GRAVE_CONFIG.ROUTE) do
         if not GRAVE_CONFIG.ENABLED then return end
+
+        local gravesText = table.concat(stop.graves, ", ")
+        if statusLabel then
+            statusLabel.Text = "Status: Graveyard route - Stop " .. stopIdx .. "/4 (Graves: " .. gravesText .. ")"
+            statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+        end
 
         walkTo(stop.pos, 5, enabled)
         tendGraves(stop.graves)
@@ -620,11 +853,33 @@ local TRICK_CONFIG = {
     WAYPOINT_TIMEOUT = 4,     -- Max seconds to reach one waypoint before treating it as blocked
     RESULT_TIMEOUT = 6,       -- Max seconds to wait for the door text to change after a knock
     READY_TEXT = "trick or treat",
+    DEBUG = true,             -- Prints path status and door info to the console
 }
+
+local function trickLog(...)
+    if TRICK_CONFIG.DEBUG then
+        print("[Candy Loop][Trick]", ...)
+    end
+end
 
 -- True when a door prompt shows the knockable text
 local function isReadyText(text)
     return (text or ""):lower():find(TRICK_CONFIG.READY_TEXT, 1, true) ~= nil
+end
+
+-- Works for both BasePart doors and Model doors. Returns a CFrame for the door, or nil.
+local function getDoorCFrame(door)
+    if door:IsA("BasePart") then
+        return door.CFrame
+    elseif door:IsA("Model") then
+        return door:GetPivot()
+    end
+    return nil
+end
+
+local function getDoorPosition(door)
+    local cf = getDoorCFrame(door)
+    return cf and cf.Position
 end
 
 -- Doors whose Knock prompt says "Trick or Treat?"
@@ -634,7 +889,7 @@ local function getReadyDoors()
     if not folder then return list end
 
     for _, door in ipairs(folder:GetChildren()) do
-        if door:IsA("BasePart") then
+        if door:IsA("BasePart") or door:IsA("Model") then
             local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
             if prompt and isReadyText(prompt.ObjectText) then
                 table.insert(list, door)
@@ -669,7 +924,7 @@ end
 local function followPath(endPos)
     local function enabled() return TRICK_CONFIG.ENABLED end
 
-    for _ = 1, TRICK_CONFIG.PATH_RETRIES do
+    for attempt = 1, TRICK_CONFIG.PATH_RETRIES do
         if not enabled() then return false end
 
         local humanoid = getHumanoid()
@@ -685,6 +940,9 @@ local function followPath(endPos)
         local computed = pcall(function()
             path:ComputeAsync(root.Position, endPos)
         end)
+
+        trickLog("path attempt " .. attempt, "computed=" .. tostring(computed),
+            "status=" .. (computed and path.Status.Name or "error"))
 
         if computed and path.Status == Enum.PathStatus.Success then
             local waypoints = path:GetWaypoints()
@@ -702,6 +960,7 @@ local function followPath(endPos)
                 humanoid:MoveTo(wp.Position)
                 if not waitNear(root, wp.Position, 4, TRICK_CONFIG.WAYPOINT_TIMEOUT, enabled) then
                     blocked = true
+                    trickLog("waypoint " .. i .. " blocked")
                     break
                 end
             end
@@ -721,15 +980,40 @@ end
 local function knockDoor(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
     local root = getRoot()
-    if not prompt or not root then return false end
+    local doorCF = getDoorCFrame(door)
+    if not prompt or not root or not doorCF then
+        trickLog("knock aborted: missing prompt, root, or door pivot")
+        return false
+    end
 
     -- Stand in front of the door, at ground level
-    local front = door.Position + door.CFrame.LookVector * TRICK_CONFIG.APPROACH_DIST
+    local front = doorCF.Position + doorCF.LookVector * TRICK_CONFIG.APPROACH_DIST
     local target = Vector3.new(front.X, root.Position.Y, front.Z)
 
-    if not followPath(target) then return false end
+    if statusLabel then
+        statusLabel.Text = "Status: Trick or Treat - Approaching door at (" .. round(doorCF.Position.X) .. ", " .. round(doorCF.Position.Z) .. ")"
+        statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+    end
+
+    if not followPath(target) then
+        trickLog("no path to door at", doorCF.Position, "- using direct move")
+
+        -- Pathfinding failed (no route, or stuck on a roof), so move directly
+        local r = getRoot()
+        if r then
+            r.CFrame = CFrame.new(target)
+            task.wait(0.5)
+        end
+    end
+
     if not TRICK_CONFIG.ENABLED then return false end
 
+    if statusLabel then
+        statusLabel.Text = "Status: Trick or Treat - Knocking door at (" .. round(doorCF.Position.X) .. ", " .. round(doorCF.Position.Z) .. ")"
+        statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+    end
+
+    trickLog("firing prompt on door at", doorCF.Position)
     fireproximityprompt(prompt)
 
     local deadline = os.clock() + TRICK_CONFIG.RESULT_TIMEOUT
@@ -737,34 +1021,94 @@ local function knockDoor(door)
         task.wait(0.2)
     end
 
-    return not isReadyText(prompt.ObjectText)
+    local changed = not isReadyText(prompt.ObjectText)
+    trickLog("knock result changed=" .. tostring(changed))
+    return changed
 end
 
 -- Knocks every ready door, nearest first, until none are left
 local function runTrickRoute()
     local failed = {}
+    local humanoid = getHumanoid()
+    local originalSpeed = humanoid and humanoid.WalkSpeed or 16
+
+    if humanoid then
+        humanoid.WalkSpeed = 43
+    end
+
+    local lastPos = getRoot() and getRoot().Position or Vector3.new(0, 0, 0)
+    local lastPosTime = os.clock()
 
     while TRICK_CONFIG.ENABLED do
         local root = getRoot()
-        if not root then return end
+        if not root then
+            if humanoid then
+                humanoid.WalkSpeed = originalSpeed
+            end
+            return
+        end
+
+        -- Timeout: if player hasn't moved in 15 seconds and doors remain, reset
+        if os.clock() - lastPosTime >= 15 then
+            if flatDist(root.Position, lastPos) < 2 then  -- Hasn't moved significantly
+                local doors = getReadyDoors()
+                if #doors > 0 then
+                    print("[Candy Loop] Trick: Player stuck for 15 seconds, retrying...")
+                    if statusLabel then
+                        statusLabel.Text = "Status: Stuck, retrying trick or treat..."
+                        statusLabel.TextColor3 = Color3.fromRGB(255, 205, 70)
+                    end
+                    lastPos = root.Position
+                    lastPosTime = os.clock()
+                    task.wait(0.5)
+                    continue
+                end
+            end
+            lastPos = root.Position
+            lastPosTime = os.clock()
+        end
 
         local best, bestDist
+        local doorsCount = 0
         for _, door in ipairs(getReadyDoors()) do
+            doorsCount = doorsCount + 1
             if not failed[door] then
-                local d = flatDist(door.Position, root.Position)
-                if not bestDist or d < bestDist then
-                    best, bestDist = door, d
+                local pos = getDoorPosition(door)
+                if pos then
+                    local d = flatDist(pos, root.Position)
+                    if not bestDist or d < bestDist then
+                        best, bestDist = door, d
+                    end
                 end
             end
         end
 
-        if not best then return end
+        if not best then
+            trickLog("no ready doors left (ready=" .. doorsCount .. ", failed=" .. #failed .. ")")
+            if humanoid then
+                humanoid.WalkSpeed = originalSpeed
+            end
+            return
+        end
+
+        local bestPos = getDoorPosition(best)
+        local doorX = round(bestPos.X)
+        local doorZ = round(bestPos.Z)
+        local distance = round(bestDist)
+        if statusLabel then
+            statusLabel.Text = "Status: Going to door at (" .. doorX .. ", " .. doorZ .. ") - Distance: " .. distance .. "studs [" .. doorsCount .. " left]"
+            statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+        end
 
         if not knockDoor(best) then
             failed[best] = true
         end
 
         task.wait(TRICK_CONFIG.KNOCK_GAP or 0)
+    end
+
+    if humanoid then
+        humanoid.WalkSpeed = originalSpeed
     end
 end
 
@@ -787,19 +1131,33 @@ local function pumpkinStatus()
         if not pumpkinState.initialized then return "unknown" end
     end
 
-    local notReady = false
-    for _, stop in ipairs(PUMPKIN_CONFIG.ROUTE) do
-        for _, slot in ipairs(stop.slots) do
-            local st = getSlotState(slot)
-            if st == "Unknown" then
-                return "unknown"
-            elseif st == GROWING_STATE then
-                notReady = true
-            end
+    local growing = 0
+    local actionable = false
+
+    for slot = 1, PUMPKIN_CONFIG.MAX_PLOTS do
+        local st = getSlotState(slot)
+        if st == "Unknown" then
+            return "unknown"
+        elseif st == GROWING_STATE then
+            growing = growing + 1
+        elseif (st == "Grown" and PUMPKIN_CONFIG.AUTO_CARVE)
+            or (st == "Carved" and PUMPKIN_CONFIG.AUTO_PICK)
+            or (st == "Empty" and PUMPKIN_CONFIG.AUTO_PLANT) then
+            actionable = true
         end
     end
 
-    return notReady and "notready" or "ready"
+    -- Every plot is growing, so there's nothing to do
+    if growing == PUMPKIN_CONFIG.MAX_PLOTS then
+        return "notready"
+    end
+
+    -- At least one plot is ready to carve, pick, or plant
+    if actionable then
+        return "ready"
+    end
+
+    return "notready"
 end
 
 local function graveStatus()
@@ -845,10 +1203,14 @@ local function unknownTimedOut(isBlocked)
     return os.clock() - unknownSince >= UNKNOWN_TIMEOUT
 end
 
--- Returns a state and the route name. Priority: pumpkin > graveyard > trick.
+-- Returns a state and the route name. Checks trick first so it's not blocked by unknown states.
 local function decideRoute()
     local pumpkin = pumpkinStatus()
     local grave = graveStatus()
+    local trick = trickStatus()
+
+    -- Trick or Treat is checked first so it's never blocked by unknown states
+    if trick == "ready" then return "ready", "trick" end
 
     if pumpkin == "ready" then return "ready", "pumpkin" end
     if grave == "ready" then return "ready", "grave" end
@@ -858,8 +1220,6 @@ local function decideRoute()
         return "unknown", nil
     end
     unknownTimedOut(blocked)
-
-    if trickStatus() == "ready" then return "ready", "trick" end
 
     return "notready", nil
 end
@@ -962,11 +1322,30 @@ statsPage.BackgroundTransparency = 1
 statsPage.Visible = false
 statsPage.Parent = frame
 
+-- Status label (assigns the forward-declared statusLabel above)
+statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Size = UDim2.new(1, -20, 0, 40)
+statusLabel.Position = UDim2.new(0, 10, 0, 6)
+statusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+statusLabel.TextSize = 13
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.TextYAlignment = Enum.TextYAlignment.Center
+statusLabel.TextWrapped = true
+statusLabel.Text = "Status: Idle"
+statusLabel.Parent = mainPage
+
+local statusCorner = Instance.new("UICorner")
+statusCorner.CornerRadius = UDim.new(0, 6)
+statusCorner.Parent = statusLabel
+
 -- Candy toggle
 local toggleButton = Instance.new("TextButton")
 toggleButton.Name = "ToggleButton"
 toggleButton.Size = UDim2.new(1, -20, 0, 36)
-toggleButton.Position = UDim2.new(0, 10, 0, 6)
+toggleButton.Position = UDim2.new(0, 10, 0, 54)
 toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.TextSize = 16
@@ -982,7 +1361,7 @@ toggleCorner.Parent = toggleButton
 local pumpkinButton = Instance.new("TextButton")
 pumpkinButton.Name = "PumpkinButton"
 pumpkinButton.Size = UDim2.new(1, -20, 0, 36)
-pumpkinButton.Position = UDim2.new(0, 10, 0, 50)
+pumpkinButton.Position = UDim2.new(0, 10, 0, 98)
 pumpkinButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 pumpkinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 pumpkinButton.TextSize = 16
@@ -998,7 +1377,7 @@ pumpkinCorner.Parent = pumpkinButton
 local graveButton = Instance.new("TextButton")
 graveButton.Name = "GraveButton"
 graveButton.Size = UDim2.new(1, -20, 0, 36)
-graveButton.Position = UDim2.new(0, 10, 0, 94)
+graveButton.Position = UDim2.new(0, 10, 0, 142)
 graveButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 graveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 graveButton.TextSize = 16
@@ -1014,7 +1393,7 @@ graveCorner.Parent = graveButton
 local trickButton = Instance.new("TextButton")
 trickButton.Name = "TrickButton"
 trickButton.Size = UDim2.new(1, -20, 0, 36)
-trickButton.Position = UDim2.new(0, 10, 0, 182)
+trickButton.Position = UDim2.new(0, 10, 0, 230)
 trickButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 trickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 trickButton.TextSize = 16
@@ -1030,7 +1409,7 @@ trickCorner.Parent = trickButton
 local espButton = Instance.new("TextButton")
 espButton.Name = "ESPButton"
 espButton.Size = UDim2.new(1, -20, 0, 36)
-espButton.Position = UDim2.new(0, 10, 0, 138)
+espButton.Position = UDim2.new(0, 10, 0, 186)
 espButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
 espButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 espButton.TextSize = 16
@@ -1045,10 +1424,10 @@ espCorner.Parent = espButton
 local priorityLabel = Instance.new("TextLabel")
 priorityLabel.Name = "PriorityNote"
 priorityLabel.Size = UDim2.new(1, -20, 0, 36)
-priorityLabel.Position = UDim2.new(0, 10, 0.55, 138)
+priorityLabel.Position = UDim2.new(0, 10, 0.25, 230)
 priorityLabel.BackgroundTransparency = 1
 priorityLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-priorityLabel.TextSize = 8
+priorityLabel.TextSize = 12
 priorityLabel.Font = Enum.Font.Gotham
 priorityLabel.TextWrapped = true
 priorityLabel.Text = "Priority: PumpkinPatch > Graveyard > TrickOrTreat"
@@ -1274,6 +1653,7 @@ noCorner.Parent = noButton
 
 -- =========================
 -- Door ESP (Highlight) - never blocks. If the doors folder isn't loaded yet, it's attached when it appears.
+-- Works for both BasePart and Model doors.
 -- =========================
 local ESP_ENABLED = true
 local espHighlights = {}
@@ -1290,7 +1670,9 @@ end
 local function createESP(door)
     if not ESP_ENABLED or espHighlights[door] then return end
 
-    door.Transparency = 0
+    if door:IsA("BasePart") then
+        door.Transparency = 0
+    end
 
     local highlight = Instance.new("Highlight")
     highlight.FillColor = Color3.fromRGB(255, 140, 0)
@@ -1303,7 +1685,7 @@ local function createESP(door)
 end
 
 local function checkDoor(door)
-    if not door:IsA("BasePart") then return end
+    if not (door:IsA("BasePart") or door:IsA("Model")) then return end
 
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
     if not prompt or not ESP_ENABLED then
@@ -1645,6 +2027,10 @@ task.spawn(function()
             local prompt = getPrompt()
             if prompt and prompt:IsA("ProximityPrompt") then
                 fireproximityprompt(prompt)
+                if statusLabel then
+                    statusLabel.Text = "Status: Feeding candy loop..."
+                    statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+                end
             end
         end
         task.wait(0.1)
@@ -1666,25 +2052,49 @@ task.spawn(function()
         local atLobby = inLobby()
 
         if state == "unknown" then
+            if statusLabel then
+                statusLabel.Text = "Status: Loading modules..."
+                statusLabel.TextColor3 = Color3.fromRGB(255, 205, 70)
+            end
             task.wait(1)
         elseif state == "ready" and not atLobby then
+            if statusLabel then
+                statusLabel.Text = "Status: Teleporting to lobby for " .. (route or "unknown")
+                statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+            end
             goToLobby()
             task.spawn(function()
+                local targetCode2 = "20187371346491136469671725312837"--htd
                 game:GetService("ExperienceService"):LaunchExperience({
                     placeId = 131367064230486,
+                    linkCode = tostring(targetCode2)
                 })
             end)
             task.wait(10)
             task.spawn(function()
+                local targetCode2 = "20187371346491136469671725312837"--htd
                 game:GetService("ExperienceService"):LaunchExperience({
                     placeId = 131367064230486,
+                    linkCode = tostring(targetCode2)
                 })
             end)
         elseif state == "ready" and atLobby then
+            if statusLabel then
+                statusLabel.Text = "Status: Running " .. (route or "unknown") .. " route"
+                statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
+            end
             runRoute(route)
         elseif atLobby then
+            if statusLabel then
+                statusLabel.Text = "Status: In lobby, waiting for world boss..."
+                statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+            end
             tryWorldBossEnter()
         else
+            if statusLabel then
+                statusLabel.Text = "Status: Nothing ready, running backup..."
+                statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+            end
             runLoadstringOnce()
         end
 
@@ -1713,11 +2123,16 @@ local function unload()
     PUMPKIN_CONFIG.ENABLED = false
     GRAVE_CONFIG.ENABLED = false
     TRICK_CONFIG.ENABLED = false
+    if statusLabel then
+        statusLabel.Text = "Status: Unloaded"
+        statusLabel.TextColor3 = Color3.fromRGB(180, 40, 40)
+    end
     clearESP()
     for _, conn in ipairs(connections) do
         conn:Disconnect()
     end
     table.clear(connections)
+    task.wait(0.5)
     screenGui:Destroy()
 end
 
