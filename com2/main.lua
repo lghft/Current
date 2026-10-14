@@ -444,7 +444,7 @@ end
 task.spawn(function()
     local vim = game:GetService("VirtualInputManager")
     
-    while task.wait(0.1) do
+    while task.wait() do
         -- Optional safeguards if cinematic/boss functions are defined in your environment
         local statusCheck = true
         pcall(function()
@@ -480,7 +480,7 @@ task.spawn(function()
             if tool then
                 local vp = workspace.CurrentCamera.ViewportSize
                 vim:SendMouseButtonEvent(vp.X / 2, vp.Y / 2, 0, true, game, 0)
-                task.wait(0.01)
+                task.wait()
                 vim:SendMouseButtonEvent(vp.X / 2, vp.Y / 2, 0, false, game, 0)
             end
         end
