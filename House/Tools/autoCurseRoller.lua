@@ -21,6 +21,7 @@ pcall(function() inventoryGetters = require(ReplicatedStorage.Modules.Inventory.
 -- CURSE GRADIENT & STYLING CONFIGURATION
 --------------------------------------------------------------------------------
 local CURSE_GRADIENTS = {
+    -- Standard Curses
     ["BrittleBones"] = {
         color1 = Color3.fromRGB(180, 180, 220),
         color2 = Color3.fromRGB(255, 255, 255)
@@ -68,6 +69,47 @@ local CURSE_GRADIENTS = {
     ["Nightmare"] = {
         color1 = Color3.fromRGB(255, 140, 255),
         color2 = Color3.fromRGB(220, 120, 255)
+    },
+    -- Halloween Curses
+    ["SugarRush"] = {
+        color1 = Color3.fromRGB(255, 205, 120),
+        color2 = Color3.fromRGB(255, 150, 40)
+    },
+    ["BlackCat"] = {
+        color1 = Color3.fromRGB(255, 140, 30),
+        color2 = Color3.fromRGB(120, 50, 10)
+    },
+    ["JacksGrin"] = {
+        color1 = Color3.fromRGB(255, 170, 60),
+        color2 = Color3.fromRGB(230, 100, 10)
+    },
+    ["WitchingHour"] = {
+        color1 = Color3.fromRGB(255, 120, 20),
+        color2 = Color3.fromRGB(150, 60, 160)
+    },
+    ["HauntedHarvest"] = {
+        color1 = Color3.fromRGB(255, 190, 70),
+        color2 = Color3.fromRGB(200, 110, 20)
+    },
+    ["RestlessDead"] = {
+        color1 = Color3.fromRGB(255, 160, 50),
+        color2 = Color3.fromRGB(110, 210, 120)
+    },
+    ["TrickOrTreat"] = {
+        color1 = Color3.fromRGB(255, 120, 40),
+        color2 = Color3.fromRGB(255, 210, 90)
+    },
+    ["PumpkinPyre"] = {
+        color1 = Color3.fromRGB(255, 90, 0),
+        color2 = Color3.fromRGB(255, 200, 40)
+    },
+    ["HeadlessRide"] = {
+        color1 = Color3.fromRGB(255, 110, 10),
+        color2 = Color3.fromRGB(60, 20, 5)
+    },
+    ["AllHallowsEve"] = {
+        color1 = Color3.fromRGB(255, 225, 120),
+        color2 = Color3.fromRGB(255, 80, 0)
     }
 }
 
@@ -177,17 +219,35 @@ end
 --------------------------------------------------------------------------------
 -- CONFIGURATION & DEFAULTS
 --------------------------------------------------------------------------------
-local STATION_ID = next(CurseStations)
-
-local curseList = {
+local curseListStandard = {
     "BrittleBones", "GrimFortune", "CrimsonHunger", "SoulTether",
     "CryptBreath", "PlagueBite", "ShadowVeil", "DreadPulse",
     "Fallen", "HexFlame", "DevilsPact", "Nightmare"
 }
 
-local selectedCurses = {
-    ["Nightmare"] = true
+local curseListHalloween = {
+    "SugarRush", "BlackCat", "JacksGrin", "WitchingHour",
+    "HauntedHarvest", "RestlessDead", "TrickOrTreat", "PumpkinPyre",
+    "HeadlessRide", "AllHallowsEve"
 }
+
+local tabSelections = {
+    Standard = { ["Nightmare"] = true },
+    Halloween = { ["AllHallowsEve"] = true },
+}
+
+local selectedCurses = tabSelections.Standard
+
+local currentTab = "Standard"
+
+local STATION_IDS = {
+    Standard = "Main",
+    Halloween = "Halloween",
+}
+
+local function getStationId()
+    return STATION_IDS[currentTab] or "Main"
+end
 
 --------------------------------------------------------------------------------
 -- SAFE PLAYERGUI PARENTING
@@ -486,10 +546,49 @@ lockEmoji.TextColor3 = Color3.fromRGB(255, 215, 100)
 lockEmoji.TextSize = 16
 lockEmoji.Parent = curseDisplayContainer
 
--- CURSE SELECTION SECTION
+-- TAB CONTAINER
+local tabContainer = Instance.new("Frame")
+tabContainer.Size = UDim2.new(1, -24, 0, 24)
+tabContainer.Position = UDim2.new(0, 12, 0, 124)
+tabContainer.BackgroundTransparency = 1
+tabContainer.Parent = mainFrame
+
+-- Standard Tab Button
+local standardTabBtn = Instance.new("TextButton")
+standardTabBtn.Name = "StandardTab"
+standardTabBtn.Size = UDim2.new(0, 100, 1, 0)
+standardTabBtn.Position = UDim2.new(0, 0, 0, 0)
+standardTabBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
+standardTabBtn.Font = Enum.Font.SourceSansSemibold
+standardTabBtn.Text = "Standard"
+standardTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+standardTabBtn.TextSize = 14
+standardTabBtn.Parent = tabContainer
+
+local standardTabCorner = Instance.new("UICorner")
+standardTabCorner.CornerRadius = UDim.new(0, 6)
+standardTabCorner.Parent = standardTabBtn
+
+-- Halloween Tab Button
+local halloweenTabBtn = Instance.new("TextButton")
+halloweenTabBtn.Name = "HalloweenTab"
+halloweenTabBtn.Size = UDim2.new(0, 100, 1, 0)
+halloweenTabBtn.Position = UDim2.new(0, 108, 0, 0)
+halloweenTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+halloweenTabBtn.Font = Enum.Font.SourceSansSemibold
+halloweenTabBtn.Text = "Halloween"
+halloweenTabBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+halloweenTabBtn.TextSize = 14
+halloweenTabBtn.Parent = tabContainer
+
+local halloweenTabCorner = Instance.new("UICorner")
+halloweenTabCorner.CornerRadius = UDim.new(0, 6)
+halloweenTabCorner.Parent = halloweenTabBtn
+
+-- CURSE SELECTION LABEL
 local sectionLabel = Instance.new("TextLabel")
 sectionLabel.Size = UDim2.new(1, -24, 0, 20)
-sectionLabel.Position = UDim2.new(0, 12, 0, 124)
+sectionLabel.Position = UDim2.new(0, 12, 0, 154)
 sectionLabel.BackgroundTransparency = 1
 sectionLabel.Font = Enum.Font.SourceSansSemibold
 sectionLabel.Text = "Select Target Curses:"
@@ -500,8 +599,8 @@ sectionLabel.Parent = mainFrame
 
 -- CURSE LISTBOX
 local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -24, 0, 180)
-scrollFrame.Position = UDim2.new(0, 12, 0, 146)
+scrollFrame.Size = UDim2.new(1, -24, 0, 150)
+scrollFrame.Position = UDim2.new(0, 12, 0, 176)
 scrollFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 scrollFrame.BorderSizePixel = 0
 scrollFrame.ScrollBarThickness = 5
@@ -525,71 +624,109 @@ gridPadding.PaddingRight = UDim.new(0, 5)
 gridPadding.Parent = scrollFrame
 
 local curseButtons = {}
-for _, curseName in ipairs(curseList) do
-    local btn = Instance.new("TextButton")
-    btn.Name = curseName
-    btn.Font = Enum.Font.SourceSansSemibold
-    btn.Text = curseName
-    btn.TextSize = 14
-    btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-    btn.Parent = scrollFrame
 
-    local bCorner = Instance.new("UICorner")
-    bCorner.CornerRadius = UDim.new(0, 5)
-    bCorner.Parent = btn
-
-    local function updateVisual()
-        if selectedCurses[curseName] then
-            local gradient = getCurseGradient(curseName)
-            btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-            -- Add gradient without stroke with animation
-            for _, child in ipairs(btn:GetChildren()) do
-                if child:IsA("UIGradient") or child:IsA("UIStroke") then
-                    child:Destroy()
-                end
-            end
-            local btnGradient = Instance.new("UIGradient")
-            btnGradient.Color = ColorSequence.new{
-                ColorSequenceKeypoint.new(0, gradient.color1),
-                ColorSequenceKeypoint.new(1, gradient.color2)
-            }
-            btnGradient.Rotation = 0
-            btnGradient.Offset = Vector2.new(-1, 0)
-            btnGradient.Transparency = NumberSequence.new(0)
-            btnGradient.Parent = btn
-            
-            -- Add animation to curse button gradient
-            local tweenInfo = TweenInfo.new(
-                1.6,
-                Enum.EasingStyle.Linear,
-                Enum.EasingDirection.Out,
-                -1,  -- Repeat count (-1 = infinite)
-                true -- Reverse
-            )
-            local tween = TweenService:Create(btnGradient, tweenInfo, {Offset = Vector2.new(1, 0)})
-            tween:Play()
-            
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        else
-            -- Remove gradient and stroke if exists
-            for _, child in ipairs(btn:GetChildren()) do
-                if child:IsA("UIGradient") or child:IsA("UIStroke") then
-                    child:Destroy()
-                end
-            end
-            btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-            btn.TextColor3 = Color3.fromRGB(150, 150, 160)
+local function updateCurseButtons()
+    -- Clear old buttons
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
         end
     end
+    curseButtons = {}
+    
+    -- Get current curse list based on tab
+    local currentList = currentTab == "Standard" and curseListStandard or curseListHalloween
+    
+    for _, curseName in ipairs(currentList) do
+        local btn = Instance.new("TextButton")
+        btn.Name = curseName
+        btn.Font = Enum.Font.SourceSansSemibold
+        btn.Text = curseName
+        btn.TextSize = 14
+        btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+        btn.Parent = scrollFrame
 
-    btn.MouseButton1Click:Connect(function()
-        selectedCurses[curseName] = not selectedCurses[curseName]
+        local bCorner = Instance.new("UICorner")
+        bCorner.CornerRadius = UDim.new(0, 5)
+        bCorner.Parent = btn
+
+        local function updateVisual()
+            if selectedCurses[curseName] then
+                local gradient = getCurseGradient(curseName)
+                btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+                -- Add gradient without stroke with animation
+                for _, child in ipairs(btn:GetChildren()) do
+                    if child:IsA("UIGradient") or child:IsA("UIStroke") then
+                        child:Destroy()
+                    end
+                end
+                local btnGradient = Instance.new("UIGradient")
+                btnGradient.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, gradient.color1),
+                    ColorSequenceKeypoint.new(1, gradient.color2)
+                }
+                btnGradient.Rotation = 0
+                btnGradient.Offset = Vector2.new(-1, 0)
+                btnGradient.Transparency = NumberSequence.new(0)
+                btnGradient.Parent = btn
+                
+                -- Add animation to curse button gradient
+                local tweenInfo = TweenInfo.new(
+                    1.6,
+                    Enum.EasingStyle.Linear,
+                    Enum.EasingDirection.Out,
+                    -1,  -- Repeat count (-1 = infinite)
+                    true -- Reverse
+                )
+                local tween = TweenService:Create(btnGradient, tweenInfo, {Offset = Vector2.new(1, 0)})
+                tween:Play()
+                
+                btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                -- Remove gradient and stroke if exists
+                for _, child in ipairs(btn:GetChildren()) do
+                    if child:IsA("UIGradient") or child:IsA("UIStroke") then
+                        child:Destroy()
+                    end
+                end
+                btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+                btn.TextColor3 = Color3.fromRGB(150, 150, 160)
+            end
+        end
+
+        btn.MouseButton1Click:Connect(function()
+            selectedCurses[curseName] = not selectedCurses[curseName]
+            updateVisual()
+        end)
+
         updateVisual()
-    end)
-
-    updateVisual()
-    curseButtons[curseName] = btn
+        curseButtons[curseName] = btn
+    end
 end
+
+-- Tab switching
+standardTabBtn.MouseButton1Click:Connect(function()
+    currentTab = "Standard"
+    standardTabBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
+    standardTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    halloweenTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    halloweenTabBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+    selectedCurses = tabSelections.Standard
+    updateCurseButtons()
+end)
+
+halloweenTabBtn.MouseButton1Click:Connect(function()
+    currentTab = "Halloween"
+    halloweenTabBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
+    halloweenTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    standardTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    standardTabBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+    selectedCurses = tabSelections.Halloween
+    updateCurseButtons()
+end)
+
+-- Initialize with Standard tab
+updateCurseButtons()
 
 -- STATUS LABEL WITH GRADIENT
 local statusLabel = Instance.new("TextLabel")
@@ -613,7 +750,7 @@ addGradientToLabel(statusLabel, Color3.fromRGB(120, 120, 150), Color3.fromRGB(17
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(1, -24, 0, 48)
 toggleBtn.Position = UDim2.new(0, 12, 0, 358)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(70, 140, 95)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
 toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.Text = "START AUTO ROLL"
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -973,7 +1110,7 @@ getgenv().AutoRollActive = false
 local function stopRoll(message, color)
     getgenv().AutoRollActive = false
     toggleBtn.Text = "START AUTO ROLL"
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(70, 140, 95)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 120)
     statusLabel.Text = "Status: " .. (message or "Stopped")
     
     -- Update status label gradient based on state (no animation)
@@ -1003,6 +1140,7 @@ closeBtn.MouseButton1Click:Connect(unloadGUI)
 local function startRoll()
     local targetItemId = itemIdBox.Text
     local targetTier = tonumber(tierBox.Text) or 3
+    local stationId = getStationId()
 
     local hasSelection = false
     for _, isSelected in pairs(selectedCurses) do
@@ -1019,7 +1157,7 @@ local function startRoll()
 
     getgenv().AutoRollActive = true
     toggleBtn.Text = "STOP AUTO ROLL"
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(180, 70, 70)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
     statusLabel.Text = "Status: Rolling..."
     
     -- Update status label gradient for rolling state (no animation)
@@ -1075,7 +1213,7 @@ local function startRoll()
 
             -- Roll
             statusLabel.Text = "Status: Rolling curse..."
-            local result = Cursing.onRoll(targetItemId, STATION_ID)
+            local result = Cursing.onRoll(targetItemId, stationId)
             
             if result == false then
                 stopRoll("Roll Failed (No Voodoo Tokens)", Color3.fromRGB(255, 60, 60))
