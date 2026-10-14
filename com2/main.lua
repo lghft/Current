@@ -440,26 +440,53 @@ end
 ----------------------------------------------------------------
 -- AUTO-CLICKERS (Cinematic Aware)
 ----------------------------------------------------------------
+-- // Death Sentence Auto-Shoot (Integrated with Custom AutoClicker Logic)
 task.spawn(function()
     local vim = game:GetService("VirtualInputManager")
+    
     while task.wait(0.1) do
-        if getgenv().Boss and isCinematicActive() then 
-            statusLabel.Text = "Status: Waiting for Cinematic..."
+        -- Optional safeguards if cinematic/boss functions are defined in your environment
+        local statusCheck = true
+        pcall(function()
+            if getgenv().Boss and isCinematicActive and isCinematicActive() then 
+                statusCheck = false
+            end
+        end)
+        
+        if not statusCheck then
             continue 
         end
 
         local mapFolder = workspace:FindFirstChild("CURRENT_MAP")
         local hasMap = mapFolder and #mapFolder:GetChildren() > 0
 
-        if getgenv().AutoClicker and getgenv().Mob and (isPlayerInMission() or hasMap) and not isResultVisible() then
-            local vp = workspace.CurrentCamera.ViewportSize
-            vim:SendMouseButtonEvent(vp.X/2, vp.Y/2, 0, true, game, 0)
-            task.wait(0.01)
-            vim:SendMouseButtonEvent(vp.X/2, vp.Y/2, 0, false, game, 0)
+        -- Combined validation using your preferred flags and conditions
+        local inMission = true
+        pcall(function()
+            inMission = isPlayerInMission()
+        end)
+
+        local resultVisible = false
+        pcall(function()
+            resultVisible = isResultVisible()
+        end)
+
+        if getgenv().AutoClicker and getgenv().Mob and (inMission or hasMap) and not resultVisible then
+            local player = game:GetService("Players").LocalPlayer
+            local character = player and player.Character
+            local tool = character and character:FindFirstChild("Death Sentence")
+            
+            -- Ensures it only clicks if "Death Sentence" is actively equipped
+            if tool then
+                local vp = workspace.CurrentCamera.ViewportSize
+                vim:SendMouseButtonEvent(vp.X / 2, vp.Y / 2, 0, true, game, 0)
+                task.wait(0.01)
+                vim:SendMouseButtonEvent(vp.X / 2, vp.Y / 2, 0, false, game, 0)
+            end
         end
     end
 end)
-
+--[[
 task.spawn(function()
     while task.wait() do
         if getgenv().Boss and isCinematicActive() then continue end
@@ -485,7 +512,7 @@ task.spawn(function()
         end
     end
 end)
-
+]]
 ----------------------------------------------------------------
 -- ABILITY LOOP (Cinematic Aware)
 ----------------------------------------------------------------
