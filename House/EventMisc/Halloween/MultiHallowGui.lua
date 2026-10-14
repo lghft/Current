@@ -1,3 +1,4 @@
+repeat task.wait() until game:IsLoaded()
 -- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
