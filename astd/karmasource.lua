@@ -1816,7 +1816,7 @@ function OnGameEnd()
 end
 
 function FpsBoost()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Jeikaru/Roblox/main/FpsBoost"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/astd/FpsBoost"))()
 end
 
 local linkport = ""
