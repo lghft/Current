@@ -3,11 +3,11 @@ if game.GameId ~= 1720936166 then return end
 print("hi work pls")
 -- Share one running instance across repeated executions in this session.
 local sessionEnvironment = (getgenv and getgenv()) or shared
-local sessionKey = "KarmaPandaASTD_FacilitySession"
+local sessionKey = "KarmaPandaASTD_RayfieldSession"
 local previousSession = sessionEnvironment[sessionKey]
 if previousSession then
-    if previousSession.Library then
-        pcall(function() previousSession.Library:ToggleUI(true) end)
+    if previousSession.Window then
+        pcall(function() previousSession.Window:Show() end)
     end
     warn("[KarmaPanda] Already running or loading; duplicate execution stopped.")
     return
@@ -111,38 +111,72 @@ local Macros = {}
 
 benchmark_time = os.clock()
 
--- Facility UI; existing ASTD settings and macro persistence remain authoritative.
-local BASE = "https://raw.githubusercontent.com/FacilityHUB/UI-Facility/refs/heads/main/"
-local source = game:HttpGet(BASE .. "main.luau")
-local chunk, loadError = loadstring(source)
-assert(chunk, "Facility failed to compile: " .. tostring(loadError))
-local Library = chunk()
-assert(type(Library) == "table", "Facility did not return a library")
-currentSession.Library = Library
-Library.BaseUrl = BASE
-Library:SetToggleKey("K")
-local Window = Library:Window({
-    Title = string.format("KarmaPanda's ASTD | v%s", version),
-    Suffix = " | Facility",
-    Width = 760,
-    Height = 640,
-    TabStyle = "side",
-    TabWidth = 155,
-    MobileButton = true,
+-- Rayfield Gen2 UI; existing ASTD settings and macro persistence remain authoritative.
+-- Rayfield's own config saving is intentionally left off (every element uses
+-- forgetState), so Settings/Save() stays the single source of truth.
+local chunk, loadError = loadstring(game:HttpGet("https://sirius.menu/gen2"))
+assert(chunk, "Rayfield failed to compile: " .. tostring(loadError))
+local Rayfield = chunk()
+assert(type(Rayfield) == "table", "Rayfield did not return a library")
+local Window = Rayfield:CreateWindow({
+    name = string.format("KarmaPanda's ASTD | v%s", version),
+    subtitle = "All Star Tower Defense",
+    sidebarLayout = true,
+    showName = "KarmaPanda",
 })
+currentSession.Window = Window
 
--- Startup automation already runs before InitializeUI. Restore toggle visuals
--- silently so Facility's default-true callback does not start duplicate loops.
-local function AddToggle(section, options)
-    local initial = options.Default == true
-    options.Default = false
-    local control = section:Toggle(options)
-    control:Set(initial, true)
-    if options.Flag then Library.Defaults[options.Flag] = initial end
-    return control
+-- Startup automation already runs before InitializeUI, so callbacks are ignored
+-- until the UI has finished building. That way restoring toggle/dropdown state
+-- can never start duplicate loops or overwrite Settings.
+local UIReady = false
+local function Guard(callback)
+    return function(...)
+        if not UIReady then return end
+        return callback(...)
+    end
 end
 
-print("[KarmaPanda] Facility Loaded: " .. os.clock() - benchmark_time)
+-- Facility-style notification table -> Rayfield notification.
+local function Notify(options)
+    pcall(function()
+        Window:Notify({
+            title = options.Title,
+            content = options.Text,
+            duration = options.Duration,
+        })
+    end)
+end
+
+-- Rayfield dropdown .value is always a table; single mode keeps the pick in [1].
+local function First(value)
+    if type(value) == "table" then return value[1] end
+    return value
+end
+
+-- Text elements re-layout on every Set, so only write when something changed.
+local TextCache = setmetatable({}, {__mode = "k"})
+local function SetText(handle, title, content)
+    local cache = TextCache[handle]
+    if not cache then cache = {}; TextCache[handle] = cache end
+    if title ~= nil and cache.title ~= title then
+        cache.title = title
+        handle:SetTitle(title)
+    end
+    if content ~= nil and cache.content ~= content then
+        cache.content = content
+        handle:Set(content)
+    end
+end
+
+-- Replace a dropdown's options and (optionally) its selection.
+-- silent = true skips the callback, like Set(value, true).
+local function RefreshDropdown(dropdown, options, selected, silent)
+    dropdown:Refresh(table.clone(options))
+    if selected ~= nil then dropdown:Set(selected, silent) end
+end
+
+print("[KarmaPanda] Rayfield Loaded: " .. os.clock() - benchmark_time)
 benchmark_time = os.clock()
 
 if not isfolder("KarmaPanda") then makefolder("KarmaPanda") end
@@ -396,12 +430,12 @@ local function ShowUpdateLog()
     if Settings.UpdateKey == updateKey then return end
     notes = notes:gsub("^\n+", ""):gsub("\n+$", "")
 
-    local updateTab = Window:Tab("Update Log")
-    local section = updateTab:Full("Update Log")
-    local paragraph = section:Paragraph({Content = notes})
-    paragraph.Title.Parent.Visible = false
-    paragraph.Body.RichText = false
-    Window:SetTab(updateTab)
+    Window:Popup({
+        title = "Update Log",
+        subtitle = string.format("KarmaPanda's ASTD | v%s", version),
+        content = notes,
+        options = {{text = "Got it", style = "primary"}},
+    })
 
     -- Remember the key silently after showing the notes and saving successfully.
     local updatedProfile = DeepCopy(Settings)
@@ -1301,7 +1335,7 @@ end)
 local MacroLoadout = {Busy = false, Slots = {"One", "Two", "Three", "Four", "Five", "Six"}}
 
 function MacroLoadout.Notify(message)
-    Library:Notify({Title="Macro Loadout", Text=message, Duration=8, Icon="info"})
+    Notify({Title="Macro Loadout", Text=message, Duration=8, Icon="info"})
 end
 
 function MacroLoadout.Data(key)
@@ -1368,11 +1402,8 @@ end
 
 function MacroLoadout.Status(color, text)
     MacroLoadout.Color = color
-    if MacroLoadout.Button then
-        MacroLoadout.Button.Instance.BackgroundColor3 = color
-    end
     if MacroLoadout.Description then
-        MacroLoadout.Description:Set({Content="Equip Current Macro Units and Orbs\n" .. text})
+        SetText(MacroLoadout.Description, "", "Equip Current Macro Units and Orbs\n" .. text)
     end
 end
 
@@ -1560,27 +1591,27 @@ function MacroLoadout.Start()
     end
     if #plan.Issues == 0 then run(); return end
     MacroLoadout.Status(Color3.fromRGB(210,65,65), "Missing items or availability checks need attention.")
-    Window:Confirm({
-        Title="Continue using this loadout?", Width=540, Height=390,
-        Text=table.concat(plan.Issues, "\n")
+    Window:Popup({
+        title = "Continue using this loadout?",
+        content = table.concat(plan.Issues, "\n")
             .. "\n\nMissing units or orbs mean the macro maker's results—and a 100% win rate—aren't guaranteed."
             .. "\n\nTo replace a missing unit, open the macro's JSON file in JSON Editor Online (jsoneditoronline.org) and change its saved unit name to the unit you want to use."
             .. (not plan.Rebuild and "\n\nContinue will preserve your current team and only send orb requests for units already in their required slots." or ""),
-        Confirm="Continue Anyway", Cancel="Cancel", OnConfirm=run,
-        OnCancel=finish, OnDismiss=finish,
+        dismissable = false,
+        options = {
+            {text = "Cancel", callback = finish},
+            {text = "Continue Anyway", style = "primary", callback = run},
+        },
     })
 end
 
-function MacroLoadout.BuildUI(section)
-    MacroLoadout.Button = section:Button({Text="Equip Macro Loadout", Callback=MacroLoadout.Start})
-    MacroLoadout.Description = section:Paragraph({Title="", Content="Equip Current Macro Units and Orbs"})
-    local button = MacroLoadout.Button.Instance
-    -- Facility hover changes the fill; keep the status color persistent.
-    button:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
-        if MacroLoadout.Color and button.BackgroundColor3 ~= MacroLoadout.Color then
-            button.BackgroundColor3 = MacroLoadout.Color
-        end
-    end)
+function MacroLoadout.BuildUI(tab)
+    MacroLoadout.Button = tab:CreateButton({
+        name = "Equip Macro Loadout",
+        description = "Equip current macro units and orbs",
+        callback = MacroLoadout.Start,
+    })
+    MacroLoadout.Description = tab:CreateText({text = "Equip Current Macro Units and Orbs"})
 end
 
 function StartMacroRecord()
@@ -1632,13 +1663,13 @@ function StartMacroRecord()
     task.spawn(function() table.insert(record_connections, HookMultipleAbilitiesGUI()); print("Hooked Multiple Abilities GUI...") end)
     task.spawn(function() table.insert(record_connections, HookAutoSkipWave()); print("Hooked Auto Skip Wave...") end)
     task.spawn(function() table.insert(record_connections, HookSpeedChanges()); print("Hooked Speed Changes...") end)
-    Library:Notify({Title = "Macro Recording", Text = "Started Macro Recording...", Duration = 6.5, Icon = "info"})
+    Notify({Title = "Macro Recording", Text = "Started Macro Recording...", Duration = 6.5, Icon = "info"})
 end
 
 function StopMacroRecord()
     for _, v in pairs(record_connections) do v:Disconnect() end
     record_connections = {}
-    Library:Notify({Title = "Macro Recording", Text = "Stopped Macro Recording...", Duration = 6.5, Icon = "info"})
+    Notify({Title = "Macro Recording", Text = "Stopped Macro Recording...", Duration = 6.5, Icon = "info"})
 end
 
 function StartMacroPlayback()
@@ -1722,7 +1753,7 @@ function AutoBattle()
     repeat task.wait() until GUI.HUD.FastForward.Autoplay.Visible
     if get_gems() < Settings.auto_battle_gems then
         Settings.auto_battle = false
-        Library:Notify({Title = "You have no gems to run Auto Battle!", Text = "Auto battle paused until you have more gems!", Duration = 6.5, Icon = "info"})
+        Notify({Title = "You have no gems to run Auto Battle!", Text = "Auto battle paused until you have more gems!", Duration = 6.5, Icon = "info"})
         return
     end
     if game.ReplicatedStorage:FindFirstChild("Autoplay") then
@@ -1836,7 +1867,7 @@ local function importMacro(url)
         local jsonData
         success, jsonData = pcall(function() return game:GetService("HttpService"):JSONDecode(response) end)
         if success then
-            Library:Notify({Title = "Macro Imported!", Text = "Macro Import Success!", Duration = 4, Icon = "info"})
+            Notify({Title = "Macro Imported!", Text = "Macro Import Success!", Duration = 4, Icon = "info"})
         else
             warn("Error parsing JSON: " .. jsonData)
         end
@@ -1855,7 +1886,7 @@ local function importSettings(url)
         writefile(SettingsFile, response)
         delfile(tempSavePath)
         if success then
-            Library:Notify({Title = "Settings Imported!", Text = "Settings Imported Rejoin to See the changes!", Duration = 4, Icon = "info"})
+            Notify({Title = "Settings Imported!", Text = "Settings Imported Rejoin to See the changes!", Duration = 4, Icon = "info"})
         else
             warn("Error parsing JSON: " .. jsonData)
         end
@@ -2429,9 +2460,6 @@ end)
 print("[KarmaPanda] Functions Loaded: " .. os.clock() - benchmark_time)
 benchmark_time = os.clock()
 
-local function CreateHideButtonGUI()
-    Library:SetMobileButtonVisible(true)
-end
 
 local function CreateMiniGUI()
     local ScreenGui = Instance.new("ScreenGui")
@@ -2539,160 +2567,150 @@ local function CreateMiniGUI()
 end
 
 -- ============================================================
--- UI: Facility native tabs, sections, and controls.
+-- UI: Rayfield Gen2 tabs, sections and elements.
+-- Rayfield sections are headings, so elements sit directly on each tab, in order.
 function InitializeUI()
     local UnitList = get_all_units()
 
-    local function MainSettings()
-        local Main = Window:Tab("Main")
-        local MainSection
-        MainSection = Main:Section("Gameplay Scripts", 1)
-        local AutoBuffToggle = AddToggle(MainSection, {
-            Text = "Auto Unit Buffing",
-            Default = Settings.auto_buff,
-            Flag = "auto_buff",
-            Callback = function(value)
-                Settings.auto_buff = value; Save()
-                if not value then BuffEngine.Generation = BuffEngine.Generation + 1 end
-                if not is_lobby() and value then AutoBuff() end
-            end
-        })
-        local AutoUpgradeToggle = AddToggle(MainSection, {
-            Text = "Auto Upgrade",
-            Default = Settings.auto_upgrade,
-            Flag = "auto_upgrade",
-            Callback = function(value)
-                Settings.auto_upgrade = value; Save()
-                if not is_lobby() and value then AutoUpgrade() end
-            end
-        })
-        local AutoSellToggle = AddToggle(MainSection, {
-            Text = "Auto Sell",
-            Default = Settings.auto_upgrade_sell,
-            Flag = "auto_upgrade_sell",
-            Callback = function(value)
-                Settings.auto_upgrade_sell = value; Save()
-                if not is_lobby() and value then AutoSell() end
-            end
-        })
-        MainSection = Main:Section("GUI Scripts", 2)
-        local AutoVoteExtremeToggle = AddToggle(MainSection, {
-            Text = "Auto Vote Extreme Mode",
-            Default = Settings.auto_vote_extreme,
-            Flag = "auto_vote_extreme",
-            Callback = function(value)
-                Settings.auto_vote_extreme = value; Save()
-                if not is_lobby() and value then AutoVoteExtreme() end
-            end
-        })
-        local Auto2XToggle = AddToggle(MainSection, {
-            Text = "Auto 2x Speedup",
-            Default = Settings.auto_2x,
-            Flag = "auto_2x",
-            Callback = function(value)
-                Settings.auto_2x = value; Save()
-                if not is_lobby() and value then AutoChangeSpeed() end
-            end
-        })
-        local Auto3XToggle = AddToggle(MainSection, {
-            Text = "Auto 3x Speedup",
-            Default = Settings.auto_3x,
-            Flag = "auto_3x",
-            Callback = function(value)
-                Settings.auto_3x = value; Save()
-                if not is_lobby() and value then AutoChangeSpeed() end
-            end
-        })
-        local AutoBattleToggle = AddToggle(MainSection, {
-            Text = "Auto Battle",
-            Default = Settings.auto_battle,
-            Flag = "auto_battle",
-            Callback = function(value)
-                Settings.auto_battle = value; Save()
-                if not is_lobby() and value then AutoBattle() end
-            end
-        })
-        MainSection = Main:Section("Game End Scripts", 1)
-        local AutoReplayToggle = AddToggle(MainSection, {
-            Text = "Auto Replay",
-            Default = Settings.auto_replay,
-            Flag = "auto_replay",
-            Callback = function(value)
-                Settings.auto_replay = value; Save()
-                if not is_lobby() and value then AutoReplay() end
-            end
-        })
-        local AutoNextStoryToggle = AddToggle(MainSection, {
-            Text = "Auto Next Story",
-            Default = Settings.auto_next_story,
-            Flag = "auto_next_story",
-            Callback = function(value)
-                Settings.auto_next_story = value; Save()
-                if not is_lobby() and value then AutoNextStory() end
-            end
-        })
-        local function AutomationSettings()
-            MainSection = Main:Section("Automation", 2)
-            MainSection:Paragraph({
-                Title = "Automation",
-                Content = "Automatically upgrades/sells units and turns on autobattle."
-            })
-            MainSection:Input({Text = "Auto Battle Gems", Placeholder = tostring(Settings.auto_battle_gems), Flag = "auto_battle_gems", Callback = function(text) Settings.auto_battle_gems = text; Save() end})
-            MainSection:Input({Text = "Auto Upgrade Money", Placeholder = tostring(Settings.auto_upgrade_money), Flag = "auto_upgrade_money", Callback = function(text) Settings.auto_upgrade_money = text; Save() end})
-            MainSection:Input({Text = "Auto Upgrade Wave", Placeholder = tostring(Settings.auto_upgrade_wave), Flag = "auto_upgrade_wave", Callback = function(text) Settings.auto_upgrade_wave = text; Save() end})
-            MainSection:Input({Text = "Stop Auto Upgrade At Wave", Placeholder = tostring(Settings.auto_upgrade_wave_stop), Flag = "auto_upgrade_wave_stop", Callback = function(text) Settings.auto_upgrade_wave_stop = text; Save() end})
-            MainSection:Input({Text = "Auto Sell At Wave", Placeholder = tostring(Settings.auto_upgrade_wave_sell), Flag = "auto_upgrade_wave_sell", Callback = function(text) Settings.auto_upgrade_wave_sell = text; Save() end})
-        end
-
-        AutomationSettings()
+    ---------------------------------------------------------------------
+    -- Small builders for the Settings-backed controls
+    ---------------------------------------------------------------------
+    local function Heading(tab, name)
+        tab:CreateSection({name = name})
     end
 
+    local function AddText(tab, title, content)
+        return tab:CreateText({name = title, text = content})
+    end
+
+    local function AddToggle(tab, name, key, onChange)
+        return tab:CreateToggle({
+            name = name,
+            value = Settings[key] == true,
+            forgetState = true,
+            callback = Guard(function(value)
+                Settings[key] = value; Save()
+                if onChange then onChange(value) end
+            end)
+        })
+    end
+
+    -- Saves when the handle is released instead of on every drag step.
+    local function AddSlider(tab, name, key, min, max, step)
+        return tab:CreateSlider({
+            name = name,
+            range = {min, max},
+            increment = step,
+            value = Settings[key],
+            forgetState = true,
+            callback = Guard(function(value, dragging)
+                Settings[key] = value
+                if not dragging then Save() end
+            end)
+        })
+    end
+
+    local function AddNumberInput(tab, name, key)
+        return tab:CreateInput({
+            name = name,
+            numeric = true,
+            value = tostring(Settings[key]),
+            placeholder = tostring(Settings[key]),
+            forgetState = true,
+            callback = Guard(function(text)
+                local number = tonumber(text)
+                if number == nil then return end
+                Settings[key] = number; Save()
+            end)
+        })
+    end
+
+    -- Runs `run` only when the toggle was switched on and we are inside a match.
+    local function InGame(run)
+        return function(value)
+            if value and not is_lobby() then run() end
+        end
+    end
+
+    ---------------------------------------------------------------------
+    -- Main
+    ---------------------------------------------------------------------
+    local function MainSettings()
+        local Main = Window:CreateTab({name = "Main"})
+
+        Heading(Main, "Gameplay Scripts")
+        AddToggle(Main, "Auto Unit Buffing", "auto_buff", function(value)
+            if not value then BuffEngine.Generation = BuffEngine.Generation + 1 end
+            if value and not is_lobby() then AutoBuff() end
+        end)
+        AddToggle(Main, "Auto Upgrade", "auto_upgrade", InGame(function() AutoUpgrade() end))
+        AddToggle(Main, "Auto Sell", "auto_upgrade_sell", InGame(function() AutoSell() end))
+
+        Heading(Main, "GUI Scripts")
+        AddToggle(Main, "Auto Vote Extreme Mode", "auto_vote_extreme", InGame(function() AutoVoteExtreme() end))
+        AddToggle(Main, "Auto 2x Speedup", "auto_2x", InGame(function() AutoChangeSpeed() end))
+        AddToggle(Main, "Auto 3x Speedup", "auto_3x", InGame(function() AutoChangeSpeed() end))
+        AddToggle(Main, "Auto Battle", "auto_battle", InGame(function() AutoBattle() end))
+
+        Heading(Main, "Game End Scripts")
+        AddToggle(Main, "Auto Replay", "auto_replay", InGame(function() AutoReplay() end))
+        AddToggle(Main, "Auto Next Story", "auto_next_story", InGame(function() AutoNextStory() end))
+
+        Heading(Main, "Automation")
+        AddText(Main, nil, "Automatically upgrades/sells units and turns on autobattle.")
+        -- Older saves stored these as text; the game loops compare them as numbers.
+        for _, key in ipairs({"auto_battle_gems", "auto_upgrade_money", "auto_upgrade_wave", "auto_upgrade_wave_stop", "auto_upgrade_wave_sell"}) do
+            local number = tonumber(Settings[key])
+            if number ~= nil then Settings[key] = number end
+        end
+        AddNumberInput(Main, "Auto Battle Gems", "auto_battle_gems")
+        AddNumberInput(Main, "Auto Upgrade Money", "auto_upgrade_money")
+        AddNumberInput(Main, "Auto Upgrade Wave", "auto_upgrade_wave")
+        AddNumberInput(Main, "Stop Auto Upgrade At Wave", "auto_upgrade_wave_stop")
+        AddNumberInput(Main, "Auto Sell At Wave", "auto_upgrade_wave_sell")
+    end
+
+    ---------------------------------------------------------------------
+    -- Macro
+    ---------------------------------------------------------------------
     local function MacroSettings()
-        local Macro = Window:Tab("Macro")
-        local MacroSection
-        MacroSection = Macro:Section("Macros", 1)
+        local Macro = Window:CreateTab({name = "Macro"})
 
-        local MacroProfileDropdown = MacroSection:Dropdown({
-            Text = "Selected Profile",
-            Options = MacroProfileList,
-            Default = Settings.macro_profile,
-            Multi = false,
-            Flag = "macro_profile_dd",
-            Callback = function(options)
-                local value = options
-                Settings.macro_profile = value
-                if Macros[Settings.macro_profile] == nil then Macros[Settings.macro_profile] = {} end
-                Save()
-            end
+        Heading(Macro, "Macros")
+        local MacroProfileDropdown = Macro:CreateDropdown({
+            name = "Selected Profile",
+            options = table.clone(MacroProfileList),
+            value = Settings.macro_profile,
+            forgetState = true,
+            callback = Guard(function(selected)
+                local name = First(selected)
+                if type(name) ~= "string" or Macros[name] == nil then return end
+                Settings.macro_profile = name; Save()
+            end)
         })
 
-        MacroLoadout.BuildUI(MacroSection)
+        MacroLoadout.BuildUI(Macro)
 
-        local MacroProfileInfo = MacroSection:Paragraph({
-            Title = "Current Profile Info",
-            Content = "Waiting for information...\n"
-        })
+        local MacroProfileInfo = AddText(Macro, "Current Profile Info", "Waiting for information...\n")
         task.spawn(function()
-            while MacroProfileInfo ~= nil do
-                if Macros[Settings.macro_profile]["Macro"] ~= nil and Macros[Settings.macro_profile]["Units"] ~= nil then
-                    MacroProfileInfo:Set({
-                        Title = "Current Profile Info",
-                        Content = string.format("Total Steps: %s\nUnits: %s",
-                            tostring(#Macros[Settings.macro_profile]["Macro"]),
-                            table.concat(get_keys(Macros[Settings.macro_profile]["Units"]), ", "))
-                    })
+            while not Window.unloaded do
+                local profile = Macros[Settings.macro_profile]
+                if profile and profile["Macro"] ~= nil and profile["Units"] ~= nil then
+                    SetText(MacroProfileInfo, "Current Profile Info", string.format("Total Steps: %s\nUnits: %s",
+                        tostring(#profile["Macro"]),
+                        table.concat(get_keys(profile["Units"]), ", ")))
                 end
-                task.wait()
+                task.wait(0.25)
             end
         end)
 
-        MacroSection = Macro:Section("Controls", 2)
+        Heading(Macro, "Controls")
         local RecordMacroToggle
-        RecordMacroToggle = AddToggle(MacroSection, {
-            Text = "Record Macro",
-            Default = Settings.macro_record,
-            Flag = "macro_record",
-            Callback = function(value)
+        RecordMacroToggle = Macro:CreateToggle({
+            name = "Record Macro",
+            value = Settings.macro_record == true,
+            forgetState = true,
+            callback = Guard(function(value)
                 if MacroLoadout.Busy then
                     if RecordMacroToggle then RecordMacroToggle:Set(Settings.macro_record, true) end
                     MacroLoadout.Notify("Wait for loadout setup to finish before recording.")
@@ -2702,14 +2720,14 @@ function InitializeUI()
                 if not is_lobby() then
                     if value then StartMacroRecord() else StopMacroRecord() end
                 end
-            end
+            end)
         })
         local PlaybackMacroToggle
-        PlaybackMacroToggle = AddToggle(MacroSection, {
-            Text = "Playback Macro",
-            Default = Settings.macro_playback,
-            Flag = "macro_playback",
-            Callback = function(value)
+        PlaybackMacroToggle = Macro:CreateToggle({
+            name = "Playback Macro",
+            value = Settings.macro_playback == true,
+            forgetState = true,
+            callback = Guard(function(value)
                 if MacroLoadout.Busy then
                     if PlaybackMacroToggle then PlaybackMacroToggle:Set(Settings.macro_playback, true) end
                     MacroLoadout.Notify("Wait for loadout setup to finish before playback.")
@@ -2718,28 +2736,28 @@ function InitializeUI()
                 Settings.macro_playback = value; Save()
                 if not is_lobby() then
                     if value then
-                        Library:Notify({Title = "Macro Playback", Text = "Starting Macro Playback...", Duration = 6.5, Icon = "info"})
+                        Notify({Title = "Macro Playback", Text = "Starting Macro Playback...", Duration = 6.5})
                         StartMacroPlayback()
                     else
-                        Library:Notify({Title = "Macro Playback", Text = "Stopping Macro Playback...", Duration = 6.5, Icon = "info"})
+                        Notify({Title = "Macro Playback", Text = "Stopping Macro Playback...", Duration = 6.5})
                         StopMacroPlayback()
                     end
                 end
-            end
+            end)
         })
-        local MacroStatus = MacroSection:Paragraph({Title = "Status", Content = "Waiting for status...\n\n\n\n\n\n"})
+
+        local MacroStatus = AddText(Macro, "Status", "Waiting for status...")
         task.spawn(function()
-            while MacroStatus ~= nil do
+            while not Window.unloaded do
+                local content
                 if CurrentStep ~= nil then
-                    local MacroCurrentStep = Macros[Settings.macro_profile]["Macro"][CurrentStep]
+                    local profile = Macros[Settings.macro_profile]
+                    local MacroCurrentStep = profile and profile["Macro"] and profile["Macro"][CurrentStep]
                     if MacroCurrentStep ~= nil then
-                        local Target, TargetName, TargetIndex = nil, nil, nil
+                        local TargetName, TargetIndex, Remote, Parameters = nil, nil, nil, nil
                         local Time = MacroCurrentStep["Time"]
-                        local Remote, Parameters = nil, nil
-                        if MacroCurrentStep["Target"] ~= nil then
-                            Target = MacroCurrentStep["Target"]
-                            if Target ~= nil then TargetName = Target["Name"]; TargetIndex = Target["Index"] end
-                        end
+                        local Target = MacroCurrentStep["Target"]
+                        if Target ~= nil then TargetName = Target["Name"]; TargetIndex = Target["Index"] end
                         if MacroCurrentStep["Remote"] ~= nil then Remote = MacroCurrentStep["Remote"][1] end
                         if MacroCurrentStep["Parameter"] ~= nil then
                             Parameters = ""
@@ -2747,32 +2765,30 @@ function InitializeUI()
                                 Parameters = Parameters .. tostring(k) .. ": " .. tostring(v) .. "; "
                             end
                         end
-                        MacroStatus:Set({
-                            Title = "Status",
-                            Content = string.format(
-                                "Current Step: %s\nTarget: %s[%s]\nTime: %s\nGame Elapsed Time: %s\nAction: %s\nParameters: %s",
-                                tostring(CurrentStep), tostring(TargetName), tostring(TargetIndex),
-                                tostring(Time), tostring(ElapsedTime()), tostring(Remote), tostring(Parameters))
-                        })
+                        content = string.format(
+                            "Current Step: %s\nTarget: %s[%s]\nTime: %s\nGame Elapsed Time: %s\nAction: %s\nParameters: %s",
+                            tostring(CurrentStep), tostring(TargetName), tostring(TargetIndex),
+                            tostring(Time), tostring(ElapsedTime()), tostring(Remote), tostring(Parameters))
                     else
-                        MacroStatus:Set({Title = "Status", Content = string.format("Error at step %s!\nGame Elapsed Time: %s", tostring(CurrentStep), tostring(ElapsedTime()))})
+                        content = string.format("Error at step %s!\nGame Elapsed Time: %s", tostring(CurrentStep), tostring(ElapsedTime()))
                     end
                 else
-                    MacroStatus:Set({Title = "Status", Content = string.format("Idle...\nGame Elapsed Time: %s", tostring(ElapsedTime()))})
+                    content = string.format("Idle...\nGame Elapsed Time: %s", tostring(ElapsedTime()))
                 end
-                task.wait()
+                SetText(MacroStatus, "Status", content)
+                task.wait(0.1)
             end
         end)
-        MacroSection:Button({
-            Text = "Previous Macro Step",
-            Callback = function()
+        Macro:CreateButton({
+            name = "Previous Macro Step",
+            callback = function()
                 if CurrentStep ~= nil and CurrentStep > 0 then CurrentStep = CurrentStep - 1
                 else CurrentStep = 1 end
             end
         })
-        MacroSection:Button({
-            Text = "Next Macro Step",
-            Callback = function()
+        Macro:CreateButton({
+            name = "Next Macro Step",
+            callback = function()
                 if (CurrentStep == nil or CurrentStep < 0) and #Macros[Settings.macro_profile]["Macro"] > 0 then
                     CurrentStep = 1
                 elseif CurrentStep ~= nil and CurrentStep > 0 and CurrentStep < #Macros[Settings.macro_profile]["Macro"] then
@@ -2780,54 +2796,54 @@ function InitializeUI()
                 end
             end
         })
-        MacroSection:Button({
-            Text = "Reset Macro Step",
-            Callback = function() if CurrentStep ~= nil then CurrentStep = nil end end
+        Macro:CreateButton({
+            name = "Reset Macro Step",
+            callback = function() if CurrentStep ~= nil then CurrentStep = nil end end
         })
 
-        MacroSection = Macro:Section("Profile Management", 1)
+        Heading(Macro, "Profile Management")
         local ProfileNameInput = ""
-        MacroSection:Input({
-            Text = "New macro profile name",
-            Placeholder = "Default Profile",
-            Flag = "new_profile_name",
-            Callback = function(text) ProfileNameInput = text end
+        Macro:CreateInput({
+            name = "New macro profile name",
+            placeholder = "Default Profile",
+            forgetState = true,
+            callback = function(text) ProfileNameInput = text end
         })
-        MacroSection:Button({
-            Text = "Create new macro profile",
-            Callback = function()
+        Macro:CreateButton({
+            name = "Create new macro profile",
+            callback = function()
                 local profile_name = ProfileNameInput
-                if string.match(profile_name, '[^%w%s]') ~= nil then
-                    Library:Notify({Title = "Macro", Text = string.format("%s contains illegal characters!", profile_name), Duration = 6.5, Icon = "info"})
+                if profile_name == "" then
+                    Notify({Title = "Macro", Text = "Enter a profile name first!", Duration = 6.5})
+                elseif string.match(profile_name, '[^%w%s]') ~= nil then
+                    Notify({Title = "Macro", Text = string.format("%s contains illegal characters!", profile_name), Duration = 6.5})
                 elseif Macros[profile_name] ~= nil then
-                    Library:Notify({Title = "Macro", Text = string.format("Macro %s already exists!", profile_name), Duration = 6.5, Icon = "info"})
+                    Notify({Title = "Macro", Text = string.format("Macro %s already exists!", profile_name), Duration = 6.5})
                 else
                     Macros[profile_name] = DeepCopy(IndividualMacroDefaultSettings)
                     Settings.macro_profile = profile_name
                     Save()
                     table.insert(MacroProfileList, profile_name)
-
-                    MacroProfileDropdown:SetOptions(MacroProfileList)
-                    MacroProfileDropdown:Set(Settings.macro_profile)
-                    Library:Notify({Title = "Macro", Text = string.format("Created macro %s!", profile_name), Duration = 6.5, Icon = "info"})
+                    RefreshDropdown(MacroProfileDropdown, MacroProfileList, Settings.macro_profile, true)
+                    Notify({Title = "Macro", Text = string.format("Created macro %s!", profile_name), Duration = 6.5})
                 end
             end
         })
-        MacroSection:Input({
-            Text = "Import Macro",
-            Placeholder = "Place Link Here",
-            Flag = "import_macro_url",
-            Callback = function(text) linkport = text end
+        Macro:CreateInput({
+            name = "Import Macro",
+            placeholder = "Place Link Here",
+            forgetState = true,
+            callback = function(text) linkport = text end
         })
-        MacroSection:Button({Text = "Import Start", Callback = function() importMacro(linkport) end})
-        MacroSection:Button({
-            Text = "Delete selected profile",
-            Callback = function()
+        Macro:CreateButton({name = "Import Start", callback = function() importMacro(linkport) end})
+        Macro:CreateButton({
+            name = "Delete selected profile",
+            callback = function()
                 if #MacroProfileList == 1 then
-                    Library:Notify({Title = "Macro", Text = "Cannot remove last macro in list!", Duration = 6.5, Icon = "info"})
+                    Notify({Title = "Macro", Text = "Cannot remove last macro in list!", Duration = 6.5})
                     return
                 end
-                -- Remove the selected profile and update the Facility dropdown.
+                -- Remove the selected profile and update the dropdown.
                 local removed_profile_name = Settings.macro_profile
                 delfile(folder_name .. "\\" .. Settings.macro_profile .. ".json")
                 Macros[Settings.macro_profile] = nil
@@ -2836,191 +2852,126 @@ function InitializeUI()
                     if v ~= nil then Settings.macro_profile = v; break end
                 end
                 Save()
-                MacroProfileDropdown:SetOptions(MacroProfileList)
-                MacroProfileDropdown:Set(Settings.macro_profile)
-                Library:Notify({Title = "Macro", Text = string.format("Successfully removed macro profile %s!", removed_profile_name), Duration = 6.5, Icon = "info"})
+                RefreshDropdown(MacroProfileDropdown, MacroProfileList, Settings.macro_profile, true)
+                Notify({Title = "Macro", Text = string.format("Successfully removed macro profile %s!", removed_profile_name), Duration = 6.5})
             end
         })
-        MacroSection:Input({
-            Text = "Import Settings",
-            Placeholder = "Place Link Here",
-            Flag = "import_settings_url",
-            Callback = function(text) linkport2 = text end
+        Macro:CreateInput({
+            name = "Import Settings",
+            placeholder = "Place Link Here",
+            forgetState = true,
+            callback = function(text) linkport2 = text end
         })
-        MacroSection:Button({Text = "Import Start", Callback = function() importSettings(linkport2) end})
-        MacroSection:Button({
-            Text = "Clear all macro data on selected profile",
-            Callback = function()
+        Macro:CreateButton({name = "Import Start", callback = function() importSettings(linkport2) end})
+        Macro:CreateButton({
+            name = "Clear all macro data on selected profile",
+            callback = function()
                 Macros[Settings.macro_profile] = DeepCopy(IndividualMacroDefaultSettings)
                 CurrentStep = nil; Save()
-                Library:Notify({Title = "Macro", Text = "Selected profile has been cleared.", Duration = 6.5, Icon = "info"})
+                Notify({Title = "Macro", Text = "Selected profile has been cleared.", Duration = 6.5})
             end
         })
 
-        MacroSection = Macro:Section("Recording Options", 2)
-        MacroSection:Paragraph({
-            Title = "Recording Options",
-            Content = "These settings will affect any recorded macro and should not be changed unless you have any issues with macro recording. Check if you have any issues using playback offset first before playing with recording offset."
-        })
-        MacroSection:Slider({
-            Text = "Time Offset",
-            Min = -10, Max = 10,
-            Step = 0.1, Decimals = 1,
-            Default = Settings.macro_record_time_offset,
-            Flag = "macro_record_time_offset",
-            Callback = function(value) Settings.macro_record_time_offset = value; Save() end
-        })
+        Heading(Macro, "Recording Options")
+        AddText(Macro, nil, "These settings will affect any recorded macro and should not be changed unless you have any issues with macro recording. Check if you have any issues using playback offset first before playing with recording offset.")
+        AddSlider(Macro, "Time Offset", "macro_record_time_offset", -10, 10, 0.1)
 
-        MacroSection = Macro:Section("Playback Options", 1)
-        MacroSection:Paragraph({
-            Title = "Playback Options",
-            Content = "These settings will only apply during macro playback and will not affect any previously recorded macros."
-        })
-        AddToggle(MacroSection, {
-            Text = "Money Tracking",
-            Default = Settings.macro_money_tracking,
-            Flag = "macro_money_tracking",
-            Callback = function(value) Settings.macro_money_tracking = value; Save() end
-        })
-        MacroSection:Slider({
-            Text = "Time Offset",
-            Min = -10, Max = 10,
-            Step = 0.1, Decimals = 1,
-            Default = Settings.macro_playback_time_offset,
-            Flag = "macro_playback_time_offset",
-            Callback = function(value) Settings.macro_playback_time_offset = value; Save() end
-        })
-        MacroSection:Slider({
-            Text = "Magnitude",
-            Min = 0, Max = 2,
-            Step = 0.01, Decimals = 2,
-            Default = Settings.macro_magnitude,
-            Flag = "macro_magnitude",
-            Callback = function(value) Settings.macro_magnitude = value; Save() end
-        })
-        MacroSection:Slider({
-            Text = "Attempts before action skip",
-            Min = 0, Max = 120,
-            Step = 1, Decimals = 0,
-            Default = Settings.macro_playback_search_attempts,
-            Flag = "macro_playback_search_attempts",
-            Callback = function(value) Settings.macro_playback_search_attempts = value; Save() end
-        })
-        MacroSection:Slider({
-            Text = "Action skip search delay",
-            Min = 0, Max = 1,
-            Step = 0.01, Decimals = 2,
-            Default = Settings.macro_playback_search_delay,
-            Flag = "macro_playback_search_delay",
-            Callback = function(value) Settings.macro_playback_search_delay = value; Save() end
-        })
+        Heading(Macro, "Playback Options")
+        AddText(Macro, nil, "These settings will only apply during macro playback and will not affect any previously recorded macros.")
+        AddToggle(Macro, "Money Tracking", "macro_money_tracking")
+        AddSlider(Macro, "Time Offset", "macro_playback_time_offset", -10, 10, 0.1)
+        AddSlider(Macro, "Magnitude", "macro_magnitude", 0, 2, 0.01)
+        AddSlider(Macro, "Attempts before action skip", "macro_playback_search_attempts", 0, 120, 1)
+        AddSlider(Macro, "Action skip search delay", "macro_playback_search_delay", 0, 1, 0.01)
 
-        MacroSection = Macro:Section("Macro Options", 2)
-        MacroSection:Paragraph({
-            Title = "Macro Options",
-            Content = "You should leave all of these toggles on, otherwise your macro will not work properly."
+        Heading(Macro, "Macro Options")
+        AddText(Macro, nil, "You should leave all of these toggles on, otherwise your macro will not work properly.")
+        Macro:CreateDropdown({
+            name = "Elapsed Time Mode",
+            options = {"Version 2", "Version 1"},
+            value = Settings.macro_timer_version,
+            forgetState = true,
+            callback = Guard(function(selected)
+                local mode = First(selected)
+                if mode ~= "Version 2" and mode ~= "Version 1" then return end
+                Settings.macro_timer_version = mode; Save()
+            end)
         })
-        MacroSection:Dropdown({
-            Text = "Elapsed Time Mode",
-            Options = {"Version 2", "Version 1"},
-            Default = Settings.macro_timer_version,
-            Multi = false,
-            Flag = "macro_timer_version",
-            Callback = function(options)
-                Settings.macro_timer_version = options; Save()
-            end
-        })
-        AddToggle(MacroSection, {Text = "Summon Unit", Default = Settings.macro_summon, Flag = "macro_summon", Callback = function(v) Settings.macro_summon = v; Save() end})
-        AddToggle(MacroSection, {Text = "Sell Unit", Default = Settings.macro_sell, Flag = "macro_sell", Callback = function(v) Settings.macro_sell = v; Save() end})
-        AddToggle(MacroSection, {Text = "Upgrade Unit", Default = Settings.macro_upgrade, Flag = "macro_upgrade", Callback = function(v) Settings.macro_upgrade = v; Save() end})
-        AddToggle(MacroSection, {Text = "Change Unit Priority", Default = Settings.macro_priority, Flag = "macro_priority", Callback = function(v) Settings.macro_priority = v; Save() end})
-        AddToggle(MacroSection, {Text = "Unit Ability", Default = Settings.macro_ability, Flag = "macro_ability", Callback = function(v) Settings.macro_ability = v; Save() end})
-        AddToggle(MacroSection, {Text = "Unit Auto Ability", Default = Settings.macro_auto_ability, Flag = "macro_auto_ability", Callback = function(v) Settings.macro_auto_ability = v; Save() end})
-        AddToggle(MacroSection, {Text = "Skip Wave", Default = Settings.macro_skipwave, Flag = "macro_skipwave", Callback = function(v) Settings.macro_skipwave = v; Save() end})
-        AddToggle(MacroSection, {Text = "Auto Skip Wave", Default = Settings.macro_autoskipwave, Flag = "macro_autoskipwave", Callback = function(v) Settings.macro_autoskipwave = v; Save() end})
-        AddToggle(MacroSection, {Text = "Speed Change", Default = Settings.macro_speedchange, Flag = "macro_speedchange", Callback = function(v) Settings.macro_speedchange = v; Save() end})
+        AddToggle(Macro, "Summon Unit", "macro_summon")
+        AddToggle(Macro, "Sell Unit", "macro_sell")
+        AddToggle(Macro, "Upgrade Unit", "macro_upgrade")
+        AddToggle(Macro, "Change Unit Priority", "macro_priority")
+        AddToggle(Macro, "Unit Ability", "macro_ability")
+        AddToggle(Macro, "Unit Auto Ability", "macro_auto_ability")
+        AddToggle(Macro, "Skip Wave", "macro_skipwave")
+        AddToggle(Macro, "Auto Skip Wave", "macro_autoskipwave")
+        AddToggle(Macro, "Speed Change", "macro_speedchange")
 
-        MacroSection = Macro:Section("Ability Blacklist Configuration", 1)
-        MacroSection:Paragraph({
-            Title = "Ability Blacklist",
-            Content = "The ability blacklist allows you to filter out which characters you want to not have the macro record and/or playback."
-        })
+        Heading(Macro, "Ability Blacklist Configuration")
+        AddText(Macro, "Ability Blacklist", "The ability blacklist allows you to filter out which characters you want to not have the macro record and/or playback.")
 
         local blacklistOptions = #Settings.macro_ability_blacklist > 0 and Settings.macro_ability_blacklist or {"None"}
-        local AbilityBlacklistDropdown = MacroSection:Dropdown({
-            Text = "Blacklisted Units",
-            Options = blacklistOptions,
-            Default = blacklistOptions[#blacklistOptions],
-            Multi = false,
-            Search = true,
-            Flag = "ability_blacklist_selected",
-            Callback = function(options) end
+        local AbilityBlacklistDropdown = Macro:CreateDropdown({
+            name = "Blacklisted Units",
+            options = table.clone(blacklistOptions),
+            value = blacklistOptions[#blacklistOptions],
+            forgetState = true,
         })
 
         local unitListOptions = #UnitList > 0 and UnitList or {"None"}
-        local AbilityBlacklistUnitListDropdown = MacroSection:Dropdown({
-            Text = "Unit List",
-            Options = unitListOptions,
-            Default = unitListOptions[1],
-            Multi = false,
-            Search = true,
-            Flag = "ability_blacklist_unitlist",
-            Callback = function(options) end
+        local AbilityBlacklistUnitListDropdown = Macro:CreateDropdown({
+            name = "Unit List",
+            options = table.clone(unitListOptions),
+            value = unitListOptions[1],
+            forgetState = true,
         })
 
-        MacroSection:Button({
-            Text = "Add selected unit from unit list to ability blacklist",
-            Callback = function()
-                local v = AbilityBlacklistUnitListDropdown:Get()
-                if type(v) == "table" then v = v[1] end
-                    if type(v) ~= "string" or not table.find(UnitList, v) then return end
+        Macro:CreateButton({
+            name = "Add selected unit from unit list to ability blacklist",
+            callback = function()
+                local v = First(AbilityBlacklistUnitListDropdown.value)
+                if type(v) ~= "string" or not table.find(UnitList, v) then return end
                 if table.find(Settings.macro_ability_blacklist, v) == nil then
                     table.insert(Settings.macro_ability_blacklist, v)
                     Save()
-                    AbilityBlacklistDropdown:SetOptions(Settings.macro_ability_blacklist)
-                    AbilityBlacklistDropdown:Set(v)
-                    Library:Notify({Title = "Ability Blacklist", Text = string.format("Unit %s added to ability blacklist", v), Duration = 6.5, Icon = "info"})
+                    RefreshDropdown(AbilityBlacklistDropdown, Settings.macro_ability_blacklist, v, true)
+                    Notify({Title = "Ability Blacklist", Text = string.format("Unit %s added to ability blacklist", v), Duration = 6.5})
                 else
-                    Library:Notify({Title = "Ability Blacklist", Text = "Unit already exists in ability blacklist", Duration = 6.5, Icon = "info"})
+                    Notify({Title = "Ability Blacklist", Text = "Unit already exists in ability blacklist", Duration = 6.5})
                 end
             end
         })
-        MacroSection:Button({
-            Text = "Delete selected blacklisted unit from ability blacklist",
-            Callback = function()
-                local v = AbilityBlacklistDropdown:Get()
-                if type(v) == "table" then v = v[1] end
+        Macro:CreateButton({
+            name = "Delete selected blacklisted unit from ability blacklist",
+            callback = function()
+                local v = First(AbilityBlacklistDropdown.value)
                 local idx = table.find(Settings.macro_ability_blacklist, v)
                 if idx ~= nil then
                     table.remove(Settings.macro_ability_blacklist, idx)
                     Save()
                     local newList = #Settings.macro_ability_blacklist > 0 and Settings.macro_ability_blacklist or {"None"}
-                    AbilityBlacklistDropdown:SetOptions(newList)
-                    AbilityBlacklistDropdown:Set(newList[#newList])
-                    Library:Notify({Title = "Ability Blacklist", Text = string.format("Unit %s removed from ability blacklist", v), Duration = 6.5, Icon = "info"})
+                    RefreshDropdown(AbilityBlacklistDropdown, newList, newList[#newList], true)
+                    Notify({Title = "Ability Blacklist", Text = string.format("Unit %s removed from ability blacklist", v), Duration = 6.5})
                 else
-                    Library:Notify({Title = "Ability Blacklist", Text = string.format("Unit %s does not exist in ability blacklist", v), Duration = 6.5, Icon = "info"})
+                    Notify({Title = "Ability Blacklist", Text = string.format("Unit %s does not exist in ability blacklist", tostring(v)), Duration = 6.5})
                 end
             end
         })
 
         if not is_lobby() then
-            MacroSection = Macro:Section("Offset Settings", 2)
-            MacroSection:Paragraph({
-                Title = "CAUTION",
-                Content = "This is an experimental feature. All changes are irreversible, so please use with caution."
-            })
-            MacroSection:Button({
-                Text = "Save current spawn position to selected macro profile",
-                Callback = function()
+            Heading(Macro, "Offset Settings")
+            AddText(Macro, "CAUTION", "This is an experimental feature. All changes are irreversible, so please use with caution.")
+            Macro:CreateButton({
+                name = "Save current spawn position to selected macro profile",
+                callback = function()
                     Macros[Settings.macro_profile]["Map"] = {["SpawnLocation"] = tostring(game:GetService("Workspace").SpawnLocation.CFrame)}
                     Save()
-                    Library:Notify({Title = "Macro", Text = "Current map has been set to macro profile.", Duration = 6.5, Icon = "info"})
+                    Notify({Title = "Macro", Text = "Current map has been set to macro profile.", Duration = 6.5})
                 end
             })
-            MacroSection:Button({
-                Text = "Update placement locations, if game shifted map positions.",
-                Callback = function()
+            Macro:CreateButton({
+                name = "Update placement locations, if game shifted map positions.",
+                callback = function()
                     if Macros[Settings.macro_profile]["Map"] ~= nil then
                         local SpawnLocation = Macros[Settings.macro_profile]["Map"]["SpawnLocation"]
                         if SpawnLocation ~= nil then
@@ -3037,242 +2988,220 @@ function InitializeUI()
         end
     end
 
+    ---------------------------------------------------------------------
+    -- Advanced Settings
+    ---------------------------------------------------------------------
     local function AdvancedSettings()
-        local AdvancedSettingsTab = Window:Tab("Advanced Settings")
-        local AdvancedSettingsTabSection
+        local Advanced = Window:CreateTab({name = "Advanced Settings"})
 
         local function AutoUnitBuffingSettings()
-            AdvancedSettingsTabSection = AdvancedSettingsTab:Section("Auto Unit Buffing Settings", 1)
-            AdvancedSettingsTabSection:Paragraph({
-                Title = "Auto Unit Buffing Settings",
-                Content = "Select a configured unit under Units, click Edit Auto Unit Buffing Settings, change the fields, then Save Auto Unit Buffing Settings. Existing units read edits on a subsequent buff loop; newly added units require a rejoin and script execution."
-            })
+            Heading(Advanced, "Auto Unit Buffing Settings")
+            AddText(Advanced, nil, "Select a configured unit under Units, click Edit Auto Unit Buffing Settings, change the fields, then Save Auto Unit Buffing Settings. Existing units read edits on a subsequent buff loop; newly added units require a rejoin and script execution.")
             local AutoBuffUnitList = get_keys(Settings.auto_buff_units)
-            local AutoBuffSelectedUnitInformation = AdvancedSettingsTabSection:Paragraph({Title = "Selected Unit Information", Content = "Waiting for selected unit...\n"})
+            local AutoBuffSelectedUnitInformation = AddText(Advanced, "Selected Unit Information", "Waiting for selected unit...\n")
 
-            local function AutoBuffDropdownCallback(options)
-                local value = type(options) == "table" and options[1] or options
+            local function AutoBuffDropdownCallback(selected)
+                local value = First(selected)
                 if AutoBuffSelectedUnitInformation ~= nil and Settings.auto_buff_units[value] ~= nil then
                     local content = ""
                     for k, v in pairs(Settings.auto_buff_units[value]) do
                         if type(v) == "table" then
                             local parts = {}
                             for i, item in ipairs(v) do
-                                if type(item)=="table" then
+                                if type(item) == "table" then
                                     table.insert(parts, "Box " .. i .. " (time " .. tostring(item.Time) .. ", delay " .. tostring(item.Delay) .. ")")
-                                else table.insert(parts,tostring(item)) end
+                                else table.insert(parts, tostring(item)) end
                             end
                             content = content .. string.format("%s: %s\n", tostring(k), table.concat(parts, "; "))
                         else
                             content = content .. string.format("%s: %s\n", tostring(k), tostring(v))
                         end
                     end
-                    AutoBuffSelectedUnitInformation:Set({Title = "Selected Unit Information", Content = content})
+                    SetText(AutoBuffSelectedUnitInformation, "Selected Unit Information", content)
                 end
             end
 
             local autoBuffListOptions = #AutoBuffUnitList > 0 and AutoBuffUnitList or {"None"}
-            local AutoBuffDropdown = AdvancedSettingsTabSection:Dropdown({
-                Text = "Units",
-                Options = autoBuffListOptions,
-                Default = autoBuffListOptions[#autoBuffListOptions],
-                Multi = false,
-                Search = true,
-            Flag = "autobuff_selected",
-                Callback = AutoBuffDropdownCallback
+            local AutoBuffDropdown = Advanced:CreateDropdown({
+                name = "Units",
+                options = table.clone(autoBuffListOptions),
+                value = autoBuffListOptions[#autoBuffListOptions],
+                forgetState = true,
+                callback = Guard(AutoBuffDropdownCallback)
             })
 
             if #AutoBuffUnitList > 0 then
                 local firstUnit = AutoBuffUnitList[#AutoBuffUnitList]
-                AutoBuffSelectedUnitInformation:Set({
-                    Title = "Selected Unit Information",
-                    Content = string.format(
-                        "Mode: %s\nChecks: %s\nAbility Type: %s\nAbility Name: %s\nTime: %s",
-                        Settings.auto_buff_units[firstUnit]["Mode"],
-                        table.concat(Settings.auto_buff_units[firstUnit]["Checks"], ", "),
-                        Settings.auto_buff_units[firstUnit]["Ability Type"],
-                        tostring(Settings.auto_buff_units[firstUnit]["Ability Name"]),
-                        tostring(Settings.auto_buff_units[firstUnit]["Time"]))
-                })
+                local firstConfig = Settings.auto_buff_units[firstUnit]
+                SetText(AutoBuffSelectedUnitInformation, "Selected Unit Information", string.format(
+                    "Mode: %s\nChecks: %s\nAbility Type: %s\nAbility Name: %s\nTime: %s",
+                    tostring(firstConfig["Mode"]),
+                    table.concat(firstConfig["Checks"] or {}, ", "),
+                    tostring(firstConfig["Ability Type"]),
+                    tostring(firstConfig["Ability Name"]),
+                    tostring(firstConfig["Time"])))
             end
 
             local unitListOpts = #UnitList > 0 and UnitList or {"None"}
-            local AutoBuffUnitListDropdown = AdvancedSettingsTabSection:Dropdown({
-                Text = "Unit List",
-                Options = unitListOpts,
-                Default = unitListOpts[1],
-                Multi = false,
-                Search = true,
-            Flag = "autobuff_unitlist",
-                Callback = function(options) end
+            local AutoBuffUnitListDropdown = Advanced:CreateDropdown({
+                name = "Unit List",
+                options = table.clone(unitListOpts),
+                value = unitListOpts[1],
+                forgetState = true,
             })
 
-            local AutoBuffModeDropdown = AdvancedSettingsTabSection:Dropdown({
-                Text = "Buffing Mode",
-                Options = {"Box", "Pair", "Cycle", "Spam"},
-                Default = "Box",
-                Multi = false,
-                Flag = "autobuff_mode",
-                Callback = function(options) end
+            local AutoBuffModeDropdown = Advanced:CreateDropdown({
+                name = "Buffing Mode",
+                options = {"Box", "Pair", "Cycle", "Spam"},
+                value = "Box",
+                forgetState = true,
             })
 
             -- Multi-select for buff checks
-            local AutoBuffChecks = AdvancedSettingsTabSection:Dropdown({
-                Text = "Auto Buff Checks",
-                Options = {"Attack Buff", "Range Buff"},
-                Default = {"Attack Buff", "Range Buff"},
-                Multi = true,
-                Flag = "autobuff_checks",
-                Callback = function(options) end
+            local AutoBuffChecks = Advanced:CreateDropdown({
+                name = "Auto Buff Checks",
+                options = {"Attack Buff", "Range Buff"},
+                value = {"Attack Buff", "Range Buff"},
+                multiSelect = true,
+                forgetState = true,
             })
 
-            local AutoBuffTypeControl = AdvancedSettingsTabSection:Dropdown({
-                Text="Ability Type", Options={"Normal", "Multiple"}, Default="Normal",
-                Multi=false, Flag="autobuff_ability_type", Callback=function() end,
+            local AutoBuffTypeControl = Advanced:CreateDropdown({
+                name = "Ability Type",
+                options = {"Normal", "Multiple"},
+                value = "Normal",
+                forgetState = true,
             })
             local AnyMove = "Any available ability (legacy)"
-            local AutoBuffMoveControl = AdvancedSettingsTabSection:Dropdown({
-                Text="Normal / Primary Ability", Options={AnyMove}, Default=AnyMove,
-                Multi=false, Flag="autobuff_special_move", Callback=function() end,
+            local AutoBuffMoveControl = Advanced:CreateDropdown({
+                name = "Normal / Primary Ability",
+                options = {AnyMove},
+                value = AnyMove,
+                forgetState = true,
             })
-            local AutoBuffExactControl = AdvancedSettingsTabSection:Input({
-                Text="Exact Ability Name (optional override)", Default="",
-                Placeholder="Exact SpecialMove name", Flag="autobuff_exact_move", Callback=function() end,
+            local AutoBuffExactControl = Advanced:CreateInput({
+                name = "Exact Ability Name (optional override)",
+                value = "",
+                placeholder = "Exact SpecialMove name",
+                forgetState = true,
             })
-            AdvancedSettingsTabSection:Button({
-                Text="Refresh Detected Abilities",
-                Callback=function()
-                    local options, seen = {AnyMove}, {[AnyMove]=true}
+            Advanced:CreateButton({
+                name = "Refresh Detected Abilities",
+                callback = function()
+                    local options, seen = {AnyMove}, {[AnyMove] = true}
                     for _, unit in ipairs(get_units()) do
                         local move = unit:FindFirstChild("SpecialMove")
-                        if move and type(move.Value)=="string" and move.Value~="" and not seen[move.Value] then
-                            seen[move.Value]=true; table.insert(options,move.Value)
+                        if move and type(move.Value) == "string" and move.Value ~= "" and not seen[move.Value] then
+                            seen[move.Value] = true; table.insert(options, move.Value)
                         end
                     end
-                    local selected=AutoBuffMoveControl:Get()
-                    if type(selected)=="table" then selected=selected[1] end
-                    if selected and not seen[selected] then table.insert(options,selected) end
-                    AutoBuffMoveControl:SetOptions(options)
-                    AutoBuffMoveControl:Set(selected or AnyMove,true)
+                    local selected = First(AutoBuffMoveControl.value)
+                    if selected and not seen[selected] then table.insert(options, selected) end
+                    RefreshDropdown(AutoBuffMoveControl, options, selected or AnyMove, true)
                 end,
             })
-            AdvancedSettingsTabSection:Paragraph({Title="Ability matching and boxes",
-                Content="An exact primary ability name only runs while SpecialMove matches it, including after upgrades. Multiple selects the named menu option. Box uses independent groups of four in detection order; each box has its own timer. Incomplete groups wait. These groups are not based on map geometry."})
-            local AutoBuffMultipleAbilitiesNameInput
-            local AutoBuffAbilityNameControl = AdvancedSettingsTabSection:Input({
-                Text = "Multiple Abilities: Menu Option Name",
-                Placeholder = "Buff Ability",
-                Flag = "autobuff_ability_name",
-                Callback = function(text) AutoBuffMultipleAbilitiesNameInput = text end
+            AddText(Advanced, "Ability matching and boxes", "An exact primary ability name only runs while SpecialMove matches it, including after upgrades. Multiple selects the named menu option. Box uses independent groups of four in detection order; each box has its own timer. Incomplete groups wait. These groups are not based on map geometry.")
+            local AutoBuffAbilityNameControl = Advanced:CreateInput({
+                name = "Multiple Abilities: Menu Option Name",
+                placeholder = "Buff Ability",
+                forgetState = true,
             })
-
-            local AutoBuffAbilityTime = 15
-            local AutoBuffTimeControl = AdvancedSettingsTabSection:Input({
-                Text = "Ability Time",
-                Default = "15",
-                Placeholder = "15",
-                Flag = "autobuff_ability_time",
-                Callback = function(text) AutoBuffAbilityTime = tonumber(text) end
+            local AutoBuffTimeControl = Advanced:CreateInput({
+                name = "Ability Time",
+                value = "15",
+                placeholder = "15",
+                forgetState = true,
             })
-
-            local CycleUnits = 8
-            local AutoBuffCycleControl = AdvancedSettingsTabSection:Slider({
-                Text = "Cycle Units",
-                Min = 1, Max = 8,
-                Step = 1, Decimals = 0,
-                Default = CycleUnits,
-                Flag = "autobuff_cycle_units",
-                Callback = function(value) CycleUnits = value end
+            local AutoBuffCycleControl = Advanced:CreateSlider({
+                name = "Cycle Units",
+                range = {1, 8},
+                increment = 1,
+                value = 8,
+                forgetState = true,
             })
-
-            local AutoBuffDelay = 0
-            local AutoBuffDelayControl = AdvancedSettingsTabSection:Slider({
-                Text = "Post Loop Delay",
-                Min = 0, Max = 60,
-                Step = 0.1, Decimals = 1,
-                Default = AutoBuffDelay,
-                Flag = "autobuff_delay",
-                Callback = function(value) AutoBuffDelay = value end
+            local AutoBuffDelayControl = Advanced:CreateSlider({
+                name = "Post Loop Delay",
+                range = {0, 60},
+                increment = 0.1,
+                value = 0,
+                forgetState = true,
             })
-
-            local AutoBuffBox2Time = AdvancedSettingsTabSection:Input({
-                Text="Box 2 Ability Time", Default="", Placeholder="Blank = Ability Time",
-                Flag="autobuff_box2_time", Callback=function() end,
+            local AutoBuffBox2Time = Advanced:CreateInput({
+                name = "Box 2 Ability Time",
+                value = "",
+                placeholder = "Blank = Ability Time",
+                forgetState = true,
             })
-            local AutoBuffBox2Delay = AdvancedSettingsTabSection:Input({
-                Text="Box 2 Post Loop Delay", Default="", Placeholder="Blank = Post Loop Delay",
-                Flag="autobuff_box2_delay", Callback=function() end,
+            local AutoBuffBox2Delay = Advanced:CreateInput({
+                name = "Box 2 Post Loop Delay",
+                value = "",
+                placeholder = "Blank = Post Loop Delay",
+                forgetState = true,
             })
             local editingUnit
-            local EditStatus = AdvancedSettingsTabSection:Paragraph({
-                Title = "Edit Auto Unit Buffing Settings",
-                Content = "Select a unit under Units, then click Edit to load its saved settings."
-            })
+            local EditStatus = AddText(Advanced, "Edit Auto Unit Buffing Settings", "Select a unit under Units, then click Edit to load its saved settings.")
 
             local function BuffNotice(message)
-                Library:Notify({Title = "Auto Buff", Text = message, Duration = 6.5, Icon = "info"})
+                Notify({Title = "Auto Buff", Text = message, Duration = 6.5})
+            end
+
+            local function Trim(text)
+                return (text or ""):match("^%s*(.-)%s*$")
             end
 
             local function ReadBuffFields()
-                local mode = AutoBuffModeDropdown:Get()
-                if type(mode) == "table" then mode = mode[1] end
+                local mode = First(AutoBuffModeDropdown.value)
                 if not table.find({"Box", "Pair", "Cycle", "Spam"}, mode) then
                     BuffNotice("Choose a valid buffing mode."); return nil
                 end
-                -- Read controls directly so saving includes text still being edited.
-                local time = tonumber(AutoBuffTimeControl:Get())
+                local time = tonumber(AutoBuffTimeControl.value)
                 if not time or time ~= time or time == math.huge or time <= 0 then
                     BuffNotice("Ability Time must be a finite number greater than zero."); return nil
                 end
                 local checks = {}
-                local abilityType = AutoBuffTypeControl:Get()
-                if type(abilityType)=="table" then abilityType=abilityType[1] end
-                if abilityType~="Normal" and abilityType~="Multiple" then
+                local abilityType = First(AutoBuffTypeControl.value)
+                if abilityType ~= "Normal" and abilityType ~= "Multiple" then
                     BuffNotice("Choose Normal or Multiple."); return nil
                 end
-                local chosen = AutoBuffChecks:Get()
-                if type(chosen) ~= "table" then chosen = {chosen} end
-                for _, check in ipairs(chosen) do
+                for _, check in ipairs(AutoBuffChecks.value or {}) do
                     if check == "Attack Buff" then table.insert(checks, "attack")
                     elseif check == "Range Buff" then table.insert(checks, "range") end
                 end
-                local abilityName = AutoBuffAbilityNameControl:Get():match("^%s*(.-)%s*$")
+                local abilityName = Trim(AutoBuffAbilityNameControl.value)
                 if abilityType == "Multiple" and abilityName == "" then
                     BuffNotice("Enter an ability name when Multiple Abilities is selected."); return nil
                 end
-                local move = AutoBuffExactControl:Get():match("^%s*(.-)%s*$")
-                if move=="" then
-                    move=AutoBuffMoveControl:Get()
-                    if type(move)=="table" then move=move[1] end
-                    if move==AnyMove then move="" end
+                local move = Trim(AutoBuffExactControl.value)
+                if move == "" then
+                    move = First(AutoBuffMoveControl.value)
+                    if move == AnyMove then move = "" end
                 end
-                local boxTimeText=AutoBuffBox2Time:Get():match("^%s*(.-)%s*$")
-                local boxDelayText=AutoBuffBox2Delay:Get():match("^%s*(.-)%s*$")
-                local boxTime, boxDelay=time, AutoBuffDelayControl.Value
-                if boxTimeText~="" then boxTime=tonumber(boxTimeText) end
-                if boxDelayText~="" then boxDelay=tonumber(boxDelayText) end
-                if not boxTime or boxTime~=boxTime or boxTime==math.huge or boxTime<=0
-                    or not boxDelay or boxDelay~=boxDelay or boxDelay==math.huge or boxDelay<0 then
+                local boxTimeText = Trim(AutoBuffBox2Time.value)
+                local boxDelayText = Trim(AutoBuffBox2Delay.value)
+                local boxTime, boxDelay = time, AutoBuffDelayControl.value
+                if boxTimeText ~= "" then boxTime = tonumber(boxTimeText) end
+                if boxDelayText ~= "" then boxDelay = tonumber(boxDelayText) end
+                if not boxTime or boxTime ~= boxTime or boxTime == math.huge or boxTime <= 0
+                    or not boxDelay or boxDelay ~= boxDelay or boxDelay == math.huge or boxDelay < 0 then
                     BuffNotice("Box 2 time must be positive and its delay nonnegative; both must be finite."); return nil
                 end
                 return {
                     ["Special Move Name"] = move or "",
-                    ["Box Timings"] = {{Time=time, Delay=AutoBuffDelayControl.Value}, {Time=boxTime, Delay=boxDelay}},
+                    ["Box Timings"] = {{Time = time, Delay = AutoBuffDelayControl.value}, {Time = boxTime, Delay = boxDelay}},
                     ["Mode"] = mode,
                     ["Checks"] = checks,
                     ["Ability Type"] = abilityType,
                     ["Ability Name"] = abilityType == "Multiple" and abilityName or nil,
                     ["Time"] = time,
-                    ["Cycle Units"] = AutoBuffCycleControl.Value,
-                    ["Delay"] = AutoBuffDelayControl.Value
+                    ["Cycle Units"] = AutoBuffCycleControl.value,
+                    ["Delay"] = AutoBuffDelayControl.value
                 }
             end
 
-            AdvancedSettingsTabSection:Button({
-                Text = "Edit Auto Unit Buffing Settings",
-                Callback = function()
-                    local unit = AutoBuffDropdown:Get()
-                    if type(unit) == "table" then unit = unit[1] end
+            Advanced:CreateButton({
+                name = "Edit Auto Unit Buffing Settings",
+                callback = function()
+                    local unit = First(AutoBuffDropdown.value)
                     local config = unit and Settings.auto_buff_units[unit]
                     if not config then BuffNotice("Select an existing auto-buff unit under Units."); return end
                     editingUnit = unit
@@ -3281,29 +3210,28 @@ function InitializeUI()
                         if check == "attack" then table.insert(checks, "Attack Buff")
                         elseif check == "range" then table.insert(checks, "Range Buff") end
                     end
-                    AutoBuffTypeControl:Set(config["Ability Type"] or "Normal",true)
-                    local selectedMove=config["Special Move Name"] or ""
-                    AutoBuffMoveControl:SetOptions(selectedMove~="" and {AnyMove,selectedMove} or {AnyMove})
-                    AutoBuffMoveControl:Set(selectedMove~="" and selectedMove or AnyMove,true)
-                    AutoBuffExactControl:Set("",true)
-                    local box2=type(config["Box Timings"])=="table" and config["Box Timings"][2]
-                    AutoBuffBox2Time:Set(box2 and tostring(box2.Time or "") or "",true)
-                    AutoBuffBox2Delay:Set(box2 and tostring(box2.Delay or "") or "",true)
+                    AutoBuffTypeControl:Set(config["Ability Type"] or "Normal", true)
+                    local selectedMove = config["Special Move Name"] or ""
+                    RefreshDropdown(AutoBuffMoveControl, selectedMove ~= "" and {AnyMove, selectedMove} or {AnyMove},
+                        selectedMove ~= "" and selectedMove or AnyMove, true)
+                    AutoBuffExactControl:Set("", true)
+                    local box2 = type(config["Box Timings"]) == "table" and config["Box Timings"][2]
+                    AutoBuffBox2Time:Set(box2 and tostring(box2.Time or "") or "", true)
+                    AutoBuffBox2Delay:Set(box2 and tostring(box2.Delay or "") or "", true)
                     AutoBuffModeDropdown:Set(config["Mode"] or "Box", true)
                     AutoBuffChecks:Set(checks, true)
                     AutoBuffAbilityNameControl:Set(config["Ability Name"] or "", true)
                     AutoBuffTimeControl:Set(tostring(config["Time"] or 15), true)
                     AutoBuffCycleControl:Set(config["Cycle Units"] or 8, true)
                     AutoBuffDelayControl:Set(config["Delay"] or 0, true)
-                    EditStatus:Set({Title = "Editing: " .. unit, Content = "Change the fields above, then click Save Auto Unit Buffing Settings."})
+                    SetText(EditStatus, "Editing: " .. unit, "Change the fields above, then click Save Auto Unit Buffing Settings.")
                 end
             })
 
-            AdvancedSettingsTabSection:Button({
-                Text = "Save Auto Unit Buffing Settings",
-                Callback = function()
-                    local selected = AutoBuffDropdown:Get()
-                    if type(selected) == "table" then selected = selected[1] end
+            Advanced:CreateButton({
+                name = "Save Auto Unit Buffing Settings",
+                callback = function()
+                    local selected = First(AutoBuffDropdown.value)
                     if not editingUnit or selected ~= editingUnit then
                         BuffNotice("Click Edit for the selected unit before saving."); return
                     end
@@ -3316,135 +3244,123 @@ function InitializeUI()
                     config["Ability Name"] = updated["Ability Name"]
                     Save()
                     AutoBuffDropdownCallback(editingUnit)
-                    EditStatus:Set({Title = "Editing: " .. editingUnit, Content = "Changes saved."})
+                    SetText(EditStatus, "Editing: " .. editingUnit, "Changes saved.")
                     BuffNotice("Saved auto-buff settings for " .. editingUnit .. ".")
                 end
             })
 
-            AdvancedSettingsTabSection:Button({
-                Text = "Add selected unit from unit list to auto buff",
-                Callback = function()
-                    local v = AutoBuffUnitListDropdown:Get()
-                    if type(v) == "table" then v = v[1] end
+            Advanced:CreateButton({
+                name = "Add selected unit from unit list to auto buff",
+                callback = function()
+                    local v = First(AutoBuffUnitListDropdown.value)
                     if type(v) ~= "string" or not table.find(UnitList, v) then return end
                     if Settings.auto_buff_units[v] == nil then
                         local updated = ReadBuffFields()
                         if not updated then return end
                         Settings.auto_buff_units[v] = updated
                         Save()
-                        local newList = get_keys(Settings.auto_buff_units)
-                        AutoBuffDropdown:SetOptions(newList)
-                        AutoBuffDropdown:Set(v)
-                        Library:Notify({Title = "Auto Buff", Text = string.format("Unit %s added to auto buff unit list", v), Duration = 6.5, Icon = "info"})
+                        -- Not silent: selecting the new unit refreshes the info card.
+                        RefreshDropdown(AutoBuffDropdown, get_keys(Settings.auto_buff_units), v)
+                        Notify({Title = "Auto Buff", Text = string.format("Unit %s added to auto buff unit list", v), Duration = 6.5})
                     else
-                        Library:Notify({Title = "Auto Buff", Text = "Unit already exists in auto buff list", Duration = 6.5, Icon = "info"})
+                        Notify({Title = "Auto Buff", Text = "Unit already exists in auto buff list", Duration = 6.5})
                     end
                 end
             })
 
-            AdvancedSettingsTabSection:Button({
-                Text = "Delete selected auto buff unit from auto buff",
-                Callback = function()
-                    local v = AutoBuffDropdown:Get()
-                    if type(v) == "table" then v = v[1] end
+            Advanced:CreateButton({
+                name = "Delete selected auto buff unit from auto buff",
+                callback = function()
+                    local v = First(AutoBuffDropdown.value)
                     if Settings.auto_buff_units[v] ~= nil then
                         Settings.auto_buff_units[v] = nil
                         Save()
                         local newList = get_keys(Settings.auto_buff_units)
                         if #newList == 0 then newList = {"None"} end
-                        AutoBuffDropdown:SetOptions(newList)
-                        AutoBuffDropdown:Set(newList[#newList])
-                        Library:Notify({Title = "Auto Buff", Text = string.format("Unit %s removed from auto buff list", v), Duration = 6.5, Icon = "info"})
+                        RefreshDropdown(AutoBuffDropdown, newList, newList[#newList])
+                        Notify({Title = "Auto Buff", Text = string.format("Unit %s removed from auto buff list", v), Duration = 6.5})
                     else
-                        Library:Notify({Title = "Auto Buff", Text = string.format("Unit %s does not exist in auto buff list", v), Duration = 6.5, Icon = "info"})
+                        Notify({Title = "Auto Buff", Text = string.format("Unit %s does not exist in auto buff list", tostring(v)), Duration = 6.5})
                     end
                 end
             })
         end
 
         local function ActionQueueSettings()
-            AdvancedSettingsTabSection = AdvancedSettingsTab:Section("Action Queue Settings", 2)
-            AdvancedSettingsTabSection:Paragraph({
-                Title = "Action Queue",
-                Content = "The action queue ensures remotes are executed successfully despite lag or insufficient resources."
-            })
-            AdvancedSettingsTabSection:Slider({
-                Text = "Remote Action Delay",
-                Min = 0, Max = 1,
-                Step = 0.01, Decimals = 2,
-                Default = Settings.action_queue_remote_fire_delay,
-                Flag = "action_queue_remote_fire_delay",
-                Callback = function(value) Settings.action_queue_remote_fire_delay = value; Save() end
-            })
-            AdvancedSettingsTabSection = AdvancedSettingsTab:Section("Remote Refiring", 2)
-            AdvancedSettingsTabSection:Paragraph({
-                Title = "What is remote refiring?",
-                Content = "Remote refiring calls the remote repeatedly until the action succeeds."
-            })
-            AddToggle(AdvancedSettingsTabSection, {
-                Text = "Refire Remote",
-                Default = Settings.action_queue_remote_on_fail,
-                Flag = "action_queue_remote_on_fail",
-                Callback = function(value) Settings.action_queue_remote_on_fail = value; Save() end
-            })
-            AdvancedSettingsTabSection:Slider({
-                Text = "Pre Loop Delay",
-                Min = 0, Max = 1,
-                Step = 0.01, Decimals = 2,
-                Default = Settings.action_queue_remote_on_fail_delay,
-                Flag = "action_queue_remote_on_fail_delay",
-                Callback = function(value) Settings.action_queue_remote_on_fail_delay = value; Save() end
-            })
-            AdvancedSettingsTabSection:Slider({
-                Text = "Loop Delay",
-                Min = 0, Max = 1,
-                Step = 0.01, Decimals = 2,
-                Default = Settings.action_queue_remote_on_fail_delay_loop,
-                Flag = "action_queue_remote_on_fail_delay_loop",
-                Callback = function(value) Settings.action_queue_remote_on_fail_delay = value; Save() end
-            })
+            Heading(Advanced, "Action Queue Settings")
+            AddText(Advanced, "Action Queue", "The action queue ensures remotes are executed successfully despite lag or insufficient resources.")
+            AddSlider(Advanced, "Remote Action Delay", "action_queue_remote_fire_delay", 0, 1, 0.01)
+
+            Heading(Advanced, "Remote Refiring")
+            AddText(Advanced, "What is remote refiring?", "Remote refiring calls the remote repeatedly until the action succeeds.")
+            AddToggle(Advanced, "Refire Remote", "action_queue_remote_on_fail")
+            AddSlider(Advanced, "Pre Loop Delay", "action_queue_remote_on_fail_delay", 0, 1, 0.01)
+            AddSlider(Advanced, "Loop Delay", "action_queue_remote_on_fail_delay_loop", 0, 1, 0.01)
         end
 
         AutoUnitBuffingSettings()
         ActionQueueSettings()
     end
 
+    ---------------------------------------------------------------------
+    -- Lobby
+    ---------------------------------------------------------------------
     local function LobbySettings()
-        local Lobby = Window:Tab("Lobby")
-        local LobbySection
-        LobbySection = Lobby:Section("Lobby Scripts", 1)
-        AddToggle(LobbySection, {Text = "Auto Join Game", Default = Settings.auto_join_game, Flag = "auto_join_game", Callback = function(value) Settings.auto_join_game = value; Save(); if value and is_lobby() then task.spawn(AutoJoinGame) end end})
-        AddToggle(LobbySection, {Text = "Auto Join Tower", Default = Settings.auto_join_tower, Flag = "auto_join_tower", Callback = function(value) Settings.auto_join_tower = value; Save(); if value and is_lobby() then task.spawn(AutoTower) end end})
-        AddToggle(LobbySection, {Text = "Auto Evolve EXP", Default = Settings.auto_evolve_exp, Flag = "auto_evolve_exp", Callback = function(value) Settings.auto_evolve_exp = value; Save(); if value and is_lobby() then task.spawn(AutoEvolveEXP) end end})
-        AddToggle(LobbySection, {Text = "Auto Click Popup", Default = Settings.auto_skip_gui, Flag = "auto_skip_gui", Callback = function(value) Settings.auto_skip_gui = value; Save(); if value then task.spawn(AutoSkipGUI) end end})
+        local Lobby = Window:CreateTab({name = "Lobby"})
 
-        LobbySection = Lobby:Section("Auto Join Settings", 2)
-        LobbySection:Slider({Text = "Delay", Min = 0, Max = 60, Step = 1, Decimals = 0, Default = Settings.auto_join_delay, Flag = "auto_join_delay", Callback = function(value) Settings.auto_join_delay = value; Save() end})
-        LobbySection:Dropdown({
-            Text = "Mode",
-            Options = {"Story", "Infinite", "Adventure", "Time Chamber", "Team Event", "Bakugan Event"},
-            Default = Settings.auto_join_mode,
-            Multi = false,
-            Flag = "auto_join_mode",
-            Callback = function(options) Settings.auto_join_mode = options; Save() end
+        Heading(Lobby, "Lobby Scripts")
+        AddToggle(Lobby, "Auto Join Game", "auto_join_game", function(value)
+            if value and is_lobby() then task.spawn(AutoJoinGame) end
+        end)
+        AddToggle(Lobby, "Auto Join Tower", "auto_join_tower", function(value)
+            if value and is_lobby() then task.spawn(AutoTower) end
+        end)
+        AddToggle(Lobby, "Auto Evolve EXP", "auto_evolve_exp", function(value)
+            if value and is_lobby() then task.spawn(AutoEvolveEXP) end
+        end)
+        AddToggle(Lobby, "Auto Click Popup", "auto_skip_gui", function(value)
+            if value then task.spawn(AutoSkipGUI) end
+        end)
+
+        Heading(Lobby, "Auto Join Settings")
+        AddSlider(Lobby, "Delay", "auto_join_delay", 0, 60, 1)
+        Lobby:CreateDropdown({
+            name = "Mode",
+            options = {"Story", "Infinite", "Adventure", "Time Chamber", "Team Event", "Bakugan Event"},
+            value = Settings.auto_join_mode,
+            forgetState = true,
+            callback = Guard(function(selected)
+                local mode = First(selected)
+                if type(mode) ~= "string" or mode == "" then return end
+                Settings.auto_join_mode = mode; Save()
+            end)
         })
-        StoryLevelControl = LobbySection:Slider({Text = "Story Level", Min = 1, Max = math.max(get_number_missions(), Settings.auto_join_story_level), Step = 1, Decimals = 0, Default = Settings.auto_join_story_level, Flag = "auto_join_story_level", Callback = function(value) Settings.auto_join_story_level = value; Save() end})
+        StoryLevelControl = Lobby:CreateSlider({
+            name = "Story Level",
+            range = {1, math.max(get_number_missions(), Settings.auto_join_story_level)},
+            increment = 1,
+            value = Settings.auto_join_story_level,
+            forgetState = true,
+            callback = Guard(function(value, dragging)
+                Settings.auto_join_story_level = value
+                if not dragging then Save() end
+            end)
+        })
 
         if InfiniteMapTable[Settings.auto_join_infinite_level] == nil then
             Settings.auto_join_infinite_level = "-1"; Save()
         end
-        LobbySection:Dropdown({
-            Text = "Infinite Map Selection",
-            Options = GetMapsFromTable(InfiniteMapTable),
-            Default = InfiniteMapTable[Settings.auto_join_infinite_level],
-            Multi = false,
-            Flag = "auto_join_infinite_level",
-            Callback = function(options)
-                local option = options
+        Lobby:CreateDropdown({
+            name = "Infinite Map Selection",
+            options = GetMapsFromTable(InfiniteMapTable),
+            value = InfiniteMapTable[Settings.auto_join_infinite_level],
+            forgetState = true,
+            callback = Guard(function(selected)
+                local option = First(selected)
                 for k, v in pairs(InfiniteMapTable) do
                     if v == option then Settings.auto_join_infinite_level = k; Save(); break end
                 end
-            end
+            end)
         })
 
         RefreshAdventureMaps()
@@ -3473,153 +3389,161 @@ function InitializeUI()
         end
 
         local adventureOptions, adventureSelected = BuildAdventureOptions()
-        local AdventureMapDropdown = LobbySection:Dropdown({
-            Text = "Adventure Map Selection",
-            Options = adventureOptions,
-            Default = adventureSelected,
-            Multi = false,
-            Search = true,
-            Flag = "auto_join_adventure_level",
-            Callback = function(option)
-                if type(option) == "table" then option = option[1] end
-                local id = adventureLabelsToIds[option]
+        local AdventureMapDropdown = Lobby:CreateDropdown({
+            name = "Adventure Map Selection",
+            options = adventureOptions,
+            value = adventureSelected,
+            forgetState = true,
+            callback = Guard(function(selected)
+                local id = adventureLabelsToIds[First(selected)]
                 if id then Settings.auto_join_adventure_level = id; Save() end
-            end
+            end)
         })
 
         -- Also handles delayed card creation, title changes and replaced HUDs.
         -- Preserve the saved map ID while the game's list is unavailable.
         task.spawn(function()
-            while AdventureMapDropdown.Instance and AdventureMapDropdown.Instance.Parent do
+            while not Window.unloaded do
                 if RefreshAdventureMaps() then
                     local options, selected = BuildAdventureOptions()
-                    AdventureMapDropdown:SetOptions(options)
-                    AdventureMapDropdown:Set(selected, true)
+                    RefreshDropdown(AdventureMapDropdown, options, selected, true)
                 end
                 task.wait(2)
             end
         end)
 
         if get_world() ~= -1 and get_world() ~= -2 then
-            LobbySection = Lobby:Section("World Teleports", 1)
+            Heading(Lobby, "World Teleports")
             local function UseWorldTeleporter(Teleporter)
                 firetouchinterest(Player.Character.HumanoidRootPart, Teleporter, 0)
                 task.wait()
                 firetouchinterest(Player.Character.HumanoidRootPart, Teleporter, 1)
             end
             if get_world() == 1 then
-                LobbySection:Button({Text = "Teleport to World 2", Callback = function() UseWorldTeleporter(get_world_teleporter()) end})
+                Lobby:CreateButton({name = "Teleport to World 2", callback = function() UseWorldTeleporter(get_world_teleporter()) end})
             elseif get_world() == 2 then
-                LobbySection:Button({Text = "Teleport to World 1", Callback = function() UseWorldTeleporter(get_world_teleporter()) end})
+                Lobby:CreateButton({name = "Teleport to World 1", callback = function() UseWorldTeleporter(get_world_teleporter()) end})
             end
         end
     end
 
+    ---------------------------------------------------------------------
+    -- Webhooks
+    ---------------------------------------------------------------------
     local function WebhookSettings()
-        local Webhook = Window:Tab("Webhooks")
-        local WebhookSection
-        WebhookSection = Webhook:Section("Settings", 1)
-        WebhookSection:Input({Text = "URL", Placeholder = Settings.webhook_url, Flag = "webhook_url", Callback = function(text) Settings.webhook_url = text; Save() end})
-        WebhookSection:Input({Text = "Discord ID", Placeholder = Settings.webhook_discord_id, Flag = "webhook_discord_id", Callback = function(text) Settings.webhook_discord_id = text; Save() end})
-        AddToggle(WebhookSection, {Text = "Ping User", Default = Settings.webhook_ping_user, Flag = "webhook_ping_user", Callback = function(value) Settings.webhook_ping_user = value; Save() end})
-        WebhookSection:Button({Text = "Test Webhook", Callback = function() SendWebhook({{["name"] = "Webhook Test", ["value"] = "Webhook sent successfully!"}}) end})
-        WebhookSection:ColorPicker({
-            Text = "Webhook color",
-            Default = Color3.fromHex(Settings.webhook_color), Alpha = false,
-            Flag = "webhook_color",
-            Callback = function(value) Settings.webhook_color = value:ToHex(); Save() end
+        local Webhook = Window:CreateTab({name = "Webhooks"})
+
+        Heading(Webhook, "Settings")
+        Webhook:CreateInput({
+            name = "URL",
+            value = Settings.webhook_url,
+            placeholder = "https://discord.com/api/webhooks/...",
+            forgetState = true,
+            callback = Guard(function(text) Settings.webhook_url = text; Save() end)
         })
-        WebhookSection = Webhook:Section("Toggles", 2)
-        AddToggle(WebhookSection, {Text = "Send webhook on game end", Default = Settings.webhook_end_game, Flag = "webhook_end_game", Callback = function(value) Settings.webhook_end_game = value; Save() end})
-        AddToggle(WebhookSection, {Text = "Send webhook after exp evolve", Default = Settings.webhook_exp_evolve, Flag = "webhook_exp_evolve", Callback = function(value) Settings.webhook_exp_evolve = value; Save() end})
+        Webhook:CreateInput({
+            name = "Discord ID",
+            value = Settings.webhook_discord_id,
+            placeholder = "Your Discord user ID",
+            forgetState = true,
+            callback = Guard(function(text) Settings.webhook_discord_id = text; Save() end)
+        })
+        AddToggle(Webhook, "Ping User", "webhook_ping_user")
+        Webhook:CreateButton({
+            name = "Test Webhook",
+            callback = function() SendWebhook({{["name"] = "Webhook Test", ["value"] = "Webhook sent successfully!"}}) end
+        })
+        Webhook:CreateColorPicker({
+            name = "Webhook color",
+            color = Color3.fromHex(Settings.webhook_color),
+            forgetState = true,
+            callback = Guard(function(color)
+                Settings.webhook_color = color:ToHex(); Save()
+            end)
+        })
+
+        Heading(Webhook, "Toggles")
+        AddToggle(Webhook, "Send webhook on game end", "webhook_end_game")
+        AddToggle(Webhook, "Send webhook after exp evolve", "webhook_exp_evolve")
     end
 
+    ---------------------------------------------------------------------
+    -- Miscellaneous
+    ---------------------------------------------------------------------
     local function MiscellaneousSettings()
-        local Miscellaneous = Window:Tab("Miscellaneous")
-        local MiscellaneousSection
-        MiscellaneousSection = Miscellaneous:Section("Game Settings", 1)
-        AddToggle(MiscellaneousSection, {Text = "FPS Boost", Default = Settings.fps_boost, Flag = "fps_boost", Callback = function(value) Settings.fps_boost = value; Save() end})
-        AddToggle(MiscellaneousSection, {
-            Text = "Anti-AFK",
-            Default = Settings.anti_afk,
-            Flag = "anti_afk",
-            Callback = function(value)
-                Settings.anti_afk = value; Save()
-                for _, v in pairs(getconnections(game.Players.LocalPlayer.Idled)) do v:Disable() end
-            end
-        })
-        AddToggle(MiscellaneousSection, {
-            Text = "Disable 3D Rendering",
-            Default = Settings.disable_3d_rendering,
-            Flag = "disable_3d_rendering",
-            Callback = function(value)
-                Settings.disable_3d_rendering = value; Save()
-                game:GetService("RunService"):Set3dRenderingEnabled(not value)
-            end
-        })
-        AddToggle(MiscellaneousSection, {
-            Text = "Auto Execute",
-            Default = Settings.auto_execute,
-            Flag = "auto_execute",
-            Callback = function(value)
-                Settings.auto_execute = value; Save()
-                if value then library.AutoExecute() end
-            end
-        })
+        local Miscellaneous = Window:CreateTab({name = "Miscellaneous"})
+
+        Heading(Miscellaneous, "Game Settings")
+        AddToggle(Miscellaneous, "FPS Boost", "fps_boost")
+        AddToggle(Miscellaneous, "Anti-AFK", "anti_afk", function()
+            for _, v in pairs(getconnections(game.Players.LocalPlayer.Idled)) do v:Disable() end
+        end)
+        AddToggle(Miscellaneous, "Disable 3D Rendering", "disable_3d_rendering", function(value)
+            game:GetService("RunService"):Set3dRenderingEnabled(not value)
+        end)
+        AddToggle(Miscellaneous, "Auto Execute", "auto_execute", function(value)
+            if not value then return end
+            -- `library` is a legacy global from the old UI; skip quietly if it is absent.
+            local env = (getgenv and getgenv()) or shared
+            local legacy = rawget(env, "library")
+            if type(legacy) == "table" and legacy.AutoExecute then legacy.AutoExecute() end
+        end)
         if get_world() ~= -1 and get_world() ~= -2 then
-            AddToggle(MiscellaneousSection, {
-                Text = "Anonymous Mode",
-                Default = Settings.anonymous_mode,
-                Flag = "anonymous_mode",
-                Callback = function(value)
-                    Settings.anonymous_mode = value; Save()
-                    if value then AnonMode() end
-                end
-            })
-            MiscellaneousSection:Input({
-                Text = "Change Name",
-                Placeholder = Settings.anonymous_mode_name,
-                Flag = "anonymous_mode_name",
-                Callback = function(text)
+            AddToggle(Miscellaneous, "Anonymous Mode", "anonymous_mode", function(value)
+                if value then AnonMode() end
+            end)
+            Miscellaneous:CreateInput({
+                name = "Change Name",
+                value = Settings.anonymous_mode_name,
+                placeholder = "Anonymous",
+                forgetState = true,
+                callback = Guard(function(text)
                     Settings.anonymous_mode_name = text; Save()
                     if Settings.anonymous_mode then AnonMode() end
-                end
+                end)
             })
         end
-        MiscellaneousSection = Miscellaneous:Section("Reset", 2)
-        MiscellaneousSection:Button({
-            Text = "Reset settings to default",
-            Callback = function()
+
+        Heading(Miscellaneous, "Reset")
+        Miscellaneous:CreateButton({
+            name = "Reset settings to default",
+            callback = function()
                 local resetSettings = DeepCopy(DefaultSettings)
                 resetSettings.UpdateKey = Settings.UpdateKey
                 resetSettings.UpdateShownAt = Settings.UpdateShownAt
                 resetSettings.UpdateLog = Settings.UpdateLog
                 Settings = resetSettings; Save()
-                Library:Notify({Title = "Reset", Text = "Settings restored to default! Rejoin or re-execute to apply.", Duration = 6.5, Icon = "info"})
+                Notify({Title = "Reset", Text = "Settings restored to default! Rejoin or re-execute to apply.", Duration = 6.5})
             end
         })
     end
 
+    ---------------------------------------------------------------------
+    -- Credits
+    ---------------------------------------------------------------------
     local function CreditsSettings()
-        local Credits = Window:Tab("Credits")
-        local CreditsSection
-        CreditsSection = Credits:Full("Credits")
-        CreditsSection:Paragraph({
-            Title = "Made by KarmaPanda & Maintained by Jeikaru",
-            Content = "UI powered by Facility (NEW UI). Thanks to all the supporters and donators! Join our Discord: https://discord.gg/BrnQQGKbvE"
-        })
+        local Credits = Window:CreateTab({name = "Credits"})
+        Heading(Credits, "Credits")
+        AddText(Credits, "Made by KarmaPanda & Maintained by Jeikaru",
+            "UI powered by Rayfield Gen2. Thanks to all the supporters and donators! Join our Discord: https://discord.gg/BrnQQGKbvE")
     end
 
+    -- Sidebar groups (only drawn in the sidebar layout).
+    Window:CreateSection({name = "Automation"})
     MainSettings()
     MacroSettings()
     LobbySettings()
+    Window:CreateSection({name = "Configuration"})
     WebhookSettings()
     AdvancedSettings()
     MiscellaneousSettings()
+    Window:CreateSection({name = "About"})
     CreditsSettings()
     CreateMiniGUI()
-    CreateHideButtonGUI()
-    Library:ClearDirty()
+
+    -- Anything Rayfield queued while the controls were being created runs first,
+    -- then user input starts reaching the callbacks.
+    task.defer(function() UIReady = true end)
     ShowUpdateLog()
 end
 
@@ -3635,11 +3559,11 @@ currentSession.Loading = false
 print("yes work:>")
 if not started then
 
-    if not currentSession.Library and sessionEnvironment[sessionKey] == currentSession then
+    if not currentSession.Window and sessionEnvironment[sessionKey] == currentSession then
         sessionEnvironment[sessionKey] = nil
     end
     warn("[KarmaPanda] Startup failed: " .. tostring(startupError))
-    if currentSession.Library then
+    if currentSession.Window then
         warn("[KarmaPanda] Rejoin before retrying to clear the partial session.")
     end
 end
