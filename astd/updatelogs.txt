@@ -1,16 +1,15 @@
-Key:UpdateV4.1
+Key:UpdateV4.2
 
-Update V4.1
+Update V4.2
 
 + Added Update Log (Removes after second execute)
 
 Small Changes:
 
-Reorganized Main, Macro, Lobby, Webhooks, Advanced Settings, and Miscellaneous into two columns.
-Moved Automation to the right column of Main, below GUI Scripts.
-Moved World Teleports from Miscellaneous to the left column of Lobby.
-Moved Remote Refiring to the right column of Advanced Settings, below Action Queue.
+Added Start after time:0 steps (better to use auto start though)
+Fixed Multiple Abilities in Macro Playback
+Fixed Lobby System (Also Set Ingame Auto Match Choice to Play Here)
+Fixed Advanced Settings
 
-Only Ui change expect no bugs
 
-report bugs at https://github.com/Jeikaru/Roblox-1/pulls
+report bugs at nil
