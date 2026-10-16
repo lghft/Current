@@ -114,10 +114,33 @@ benchmark_time = os.clock()
 -- Rayfield Gen2 UI; existing ASTD settings and macro persistence remain authoritative.
 -- Rayfield's own config saving is intentionally left off (every element uses
 -- forgetState), so Settings/Save() stays the single source of truth.
-local chunk, loadError = loadstring(game:HttpGet("https://sirius.menu/gen2"))
-assert(chunk, "Rayfield failed to compile: " .. tostring(loadError))
-local Rayfield = chunk()
-assert(type(Rayfield) == "table", "Rayfield did not return a library")
+-- Try Gen2 stable first, then Gen2 preview. Some hosted loaders return a function
+-- that returns the library, so unwrap a few levels.
+local function LoadRayfieldGen2(url)
+    local ok, value = pcall(function()
+        local chunk, loadError = loadstring(game:HttpGet(url))
+        if not chunk then error("compile failed: " .. tostring(loadError)) end
+        return chunk()
+    end)
+    if not ok then return nil, tostring(value) end
+    for _ = 1, 3 do
+        if type(value) ~= "function" then break end
+        value = value()
+    end
+    if type(value) == "table" then return value end
+    return nil, "returned a " .. type(value) .. " (the endpoint may be under maintenance)"
+end
+
+local Rayfield, stableError = LoadRayfieldGen2("https://sirius.menu/gen2")
+if not Rayfield then
+    warn("[KarmaPanda] Rayfield Gen2 stable unavailable: " .. tostring(stableError) .. "; trying preview.")
+    local previewError
+    Rayfield, previewError = LoadRayfieldGen2("https://sirius.menu/gen2-preview")
+    if not Rayfield then
+        error("Rayfield Gen2 is unavailable (stable: " .. tostring(stableError)
+            .. "; preview: " .. tostring(previewError) .. "). Try again shortly.", 0)
+    end
+end
 local Window = Rayfield:CreateWindow({
     name = string.format("KarmaPanda's ASTD | v%s", version),
     subtitle = "All Star Tower Defense",
@@ -284,7 +307,7 @@ local DefaultSettings = {
     macro_speedchange = true,
     macro_ability_blacklist = {
         "Erwin", "Merlin", "Brook6", "Kisuke6", "Rayleigh", "Merlin6", "Gojo7",
-        "Hoshino", "Metal Cooler","Welkin","Homura7"
+        "Hoshino", "Metal Cooler","Welkin","Homura7", "μ's"
     },
     macro_timer_version = "Version 2",
     action_queue_remote_fire_delay = 0.25,
@@ -955,6 +978,32 @@ local function UpgradeUnit(unit, upgrade_level)
     if not status then print("Error on Upgrade Unit: " .. err) end
 end
 
+local function UpgradeToLevelUnit(unit, target_level)
+    task.spawn(function()
+        local status, err = pcall(function()
+            local upgrade_tag = unit:FindFirstChild("UpgradeTag")
+            local goal = math.min(tonumber(target_level) or 0, get_max_upgrade_level(unit.Name))
+            if upgrade_tag.Value >= goal then return end
+            local total_cost = 0
+            for i = upgrade_tag.Value + 1, goal do
+                total_cost = total_cost + get_upgrade_cost(unit.Name, i)
+            end
+            repeat task.wait()
+            until get_money() >= total_cost or upgrade_tag.Value >= goal or not Settings.macro_playback
+            local attempts = 0
+            while upgrade_tag.Value < goal and attempts < 5 and Settings.macro_playback do
+                attempts = attempts + 1
+                game:GetService("ReplicatedStorage").Remotes.Server:InvokeServer("UpgradeToLevel", {
+                    targetLevel = goal, unit = unit
+                })
+                local deadline = os.clock() + 2
+                repeat task.wait(0.1) until upgrade_tag.Value >= goal or os.clock() >= deadline
+            end
+        end)
+        if not status then print("Error on Upgrade To Level: " .. tostring(err)) end
+    end)
+end
+
 local function UseAbilityUnit(unit, ability_string)
     task.spawn(function()
         local status, err = pcall(function()
@@ -992,15 +1041,34 @@ local function UseAbilityUnit(unit, ability_string)
     end)
 end
 
-local function UseMultipleAbilitiesGUI(ability_name)
-    task.spawn(function()
-        local gui = GUI:WaitForChild("MultipleAbilities")
-        for k, v in pairs(gui:WaitForChild("Frame"):GetChildren()) do
-            if v.Name == "ImageButton" then
-                local text = v:WaitForChild("TextLabel")
-                if text.Text == ability_name then firesignal(v.Activated); break end
+-- Finds the picker option whose label matches. Searches all descendants, then climbs
+-- to the nearest GuiButton.
+local function FindPickerOption(gui, abilityName)
+    for _, d in ipairs(gui:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text == abilityName then
+            local node = d
+            while node and node ~= gui do
+                if node:IsA("GuiButton") then return node end
+                node = node.Parent
             end
         end
+    end
+    return nil
+end
+
+local function UseMultipleAbilitiesGUI(ability_name)
+    task.spawn(function()
+        local deadline = os.clock() + 4
+        repeat
+            local menu = GUI:FindFirstChild("MultipleAbilities")
+            local button = menu and FindPickerOption(menu, ability_name)
+            if button then
+                firesignal(button.Activated)
+                return
+            end
+            task.wait(0.1)
+        until os.clock() >= deadline
+        print("[Macro] Picker option not found: " .. tostring(ability_name))
     end)
 end
 
@@ -1127,11 +1195,16 @@ local function InsertToMacro(action)
     end
 end
 
+-- Units recently upgraded with UpgradeToLevel; their tag changes are not recorded again.
+local LastUpgradeToLevel = setmetatable({}, {__mode = "k"})
+
 local function HookUpgrade(unit, index)
     local upgrade_level = unit:WaitForChild("UpgradeTag", 60)
     if upgrade_level ~= nil then
         return upgrade_level:GetPropertyChangedSignal("Value"):Connect(function()
-            if Settings.macro_record and Settings.macro_upgrade then
+            local recent = LastUpgradeToLevel[unit]
+            local fromLevelCommand = recent and os.clock() - recent < 3
+            if Settings.macro_record and Settings.macro_upgrade and not fromLevelCommand then
                 InsertToMacro({
                     ["Time"] = MacroRecordElapsedTime(),
                     ["Target"] = {["Name"] = unit.Name, ["Index"] = index},
@@ -1282,6 +1355,53 @@ local function HookMultipleAbilitiesGUI()
     return GUI.ChildAdded:Connect(function(c) Hook(c) end)
 end
 
+-- Most recent unit that used a special move, so a picker option click can be tied to it.
+local LastSpecialUse = {unit = nil, at = 0}
+
+-- Records option clicks in the ability picker. The picker builds one ImageButton per
+-- option inside a wrapper Frame named after the ability; the Close button is a TextButton
+-- and is skipped.
+local function HookMultipleAbilitiesPicker()
+    local hooked = setmetatable({}, {__mode = "k"})
+    local watched = setmetatable({}, {__mode = "k"})
+    local function isOption(button, gui)
+        return button:IsA("ImageButton") and button.Parent ~= nil and button.Parent.Parent ~= nil
+            and button.Parent.Parent.Parent == gui
+    end
+    local function hookOption(button, gui)
+        if hooked[button] or not isOption(button, gui) then return end
+        local label = button:FindFirstChildOfClass("TextLabel")
+        if not label then return end
+        hooked[button] = true
+        table.insert(record_connections, button.Activated:Connect(function()
+            if not (Settings.macro_record and Settings.macro_ability) then return end
+            local unit = LastSpecialUse.unit
+            if not unit or unit.Parent == nil or os.clock() - LastSpecialUse.at > 15 then return end
+            if table.find(Settings.macro_ability_blacklist, unit.Name) ~= nil then return end
+            local abilityName = label.Text
+            task.spawn(function()
+                InsertToMacro({
+                    ["Time"] = MacroRecordElapsedTime(),
+                    ["Target"] = {["Name"] = unit.Name, ["Index"] = GetUnitIndex(unit)},
+                    ["Remote"] = {[1] = "MultipleAbilities", [2] = "Target"},
+                    ["Parameter"] = {["Ability Name"] = abilityName}
+                })
+            end)
+        end))
+    end
+    local function watch(gui)
+        if watched[gui] then return end
+        watched[gui] = true
+        for _, d in ipairs(gui:GetDescendants()) do hookOption(d, gui) end
+        table.insert(record_connections, gui.DescendantAdded:Connect(function(d) hookOption(d, gui) end))
+    end
+    local existing = GUI:FindFirstChild("MultipleAbilities")
+    if existing then watch(existing) end
+    table.insert(record_connections, GUI.ChildAdded:Connect(function(c)
+        if c.Name == "MultipleAbilities" then watch(c) end
+    end))
+end
+
 local function HookSpeedChanges()
     return game:GetService("ReplicatedStorage"):WaitForChild("SpeedUP").Changed:Connect(function(v)
         if Settings.macro_record and Settings.macro_speedchange then
@@ -1319,6 +1439,34 @@ game_metatable.__namecall = newcclosure(function(self, ...)
                 end)
             end
         end
+    end
+    if method == "FireServer" and Args[1] == "UseSpecialMove" and typeof(Args[2]) == "Instance" then
+        LastSpecialUse.unit = Args[2]
+        LastSpecialUse.at = os.clock()
+    end
+    if Settings.macro_record and Settings.macro_upgrade and method == "InvokeServer" and Args[1] == "UpgradeToLevel" then
+        -- Mark the unit first so the tag changes from this call are not recorded again.
+        local payload = Args[2]
+        if type(payload) == "table" and typeof(payload.unit) == "Instance" then
+            LastUpgradeToLevel[payload.unit] = os.clock()
+        end
+        -- Run the real request untouched, then record it. Recording can never block the call.
+        local results = table.pack(namecall_original(self, ...))
+        pcall(function()
+            if type(payload) ~= "table" or typeof(payload.unit) ~= "Instance" then return end
+            local unit, level = payload.unit, tonumber(payload.targetLevel)
+            if unit.Parent == game:GetService("Workspace").Unit and level then
+                task.spawn(function()
+                    InsertToMacro({
+                        ["Time"] = MacroRecordElapsedTime(),
+                        ["Target"] = {["Name"] = unit.Name, ["Index"] = GetUnitIndex(unit)},
+                        ["Remote"] = {[1] = "UpgradeToLevel", [2] = "Target"},
+                        ["Parameter"] = {["Level"] = level}
+                    })
+                end)
+            end
+        end)
+        return table.unpack(results, 1, results.n)
     end
     return namecall_original(self, ...)
 end)
@@ -1653,6 +1801,7 @@ function StartMacroRecord()
     end)
     task.spawn(function() table.insert(record_connections, HookNextWave()); print("Hooked Next Wave...") end)
     task.spawn(function() table.insert(record_connections, HookMultipleAbilitiesGUI()); print("Hooked Multiple Abilities GUI...") end)
+    task.spawn(function() HookMultipleAbilitiesPicker(); print("Hooked Multiple Abilities Picker...") end)
     task.spawn(function() table.insert(record_connections, HookAutoSkipWave()); print("Hooked Auto Skip Wave...") end)
     task.spawn(function() table.insert(record_connections, HookSpeedChanges()); print("Hooked Speed Changes...") end)
     Notify({Title = "Macro Recording", Text = "Started Macro Recording...", Duration = 6.5, Icon = "info"})
@@ -1664,13 +1813,30 @@ function StopMacroRecord()
     Notify({Title = "Macro Recording", Text = "Stopped Macro Recording...", Duration = 6.5, Icon = "info"})
 end
 
+-- Presses the mode vote Start button once per playback run.
+local function PressStartButton()
+    local ok, err = pcall(function()
+        local button = game:GetService("Players").LocalPlayer.PlayerGui.HUD.ModeVoteFrame.StartButton
+        firesignal(button.Activated)
+    end)
+    if not ok then warn("[Macro] Start button press failed: " .. tostring(err)) end
+end
+
 function StartMacroPlayback()
     if MacroLoadout.Busy then MacroLoadout.Notify("Wait for loadout setup to finish."); return end
     if is_lobby() then return end
     table.sort(Macros[Settings.macro_profile]["Macro"], function(a, b) return a["Time"] < b["Time"] end)
     CurrentStep, _ = next(Macros[Settings.macro_profile]["Macro"], CurrentStep)
+    local sawTimeZero, startPressed = false, false
     while CurrentStep do
         local Current = Macros[Settings.macro_profile]["Macro"][CurrentStep]
+        if Current["Time"] == 0 then
+            sawTimeZero = true
+        elseif sawTimeZero and not startPressed and Settings.macro_playback then
+            -- Time-0 setup steps are done; press Start before waiting on timed steps.
+            startPressed = true
+            PressStartButton()
+        end
         repeat task.wait() until ElapsedTime() + Settings.macro_playback_time_offset >= Current["Time"] or not Settings.macro_playback
         if not Settings.macro_playback then break end
         local Remote = Current["Remote"]
@@ -1707,8 +1873,12 @@ function StartMacroPlayback()
                 end
             end
             if unit ~= nil then
-                if Remote[1] == "Upgrade" and Settings.macro_upgrade then
+                if Remote[1] == "UpgradeToLevel" and Settings.macro_upgrade then
+                    UpgradeToLevelUnit(unit, Current["Parameter"]["Level"])
+                elseif Remote[1] == "Upgrade" and Settings.macro_upgrade then
                     UpgradeUnit(unit, Current["Parameter"]["Level"])
+                elseif Remote[1] == "MultipleAbilities" and Settings.macro_ability and table.find(Settings.macro_ability_blacklist, unit.Name) == nil then
+                    UseMultipleAbilitiesGUI(Current["Parameter"]["Ability Name"])
                 elseif Remote[1] == "UseSpecialMove" and Settings.macro_ability and table.find(Settings.macro_ability_blacklist, unit.Name) == nil then
                     UseAbilityUnit(unit, Remote[3])
                 elseif Remote[1] == "AutoToggle" and Settings.macro_auto_ability then
@@ -2065,6 +2235,21 @@ function BuffEngine.Timing(config, index)
     return math.max(0.1,time), math.max(0,delay)
 end
 
+-- Finds the clickable option whose text matches. Walks every descendant so the
+-- label can sit at any depth, then climbs to the nearest GuiButton.
+local function FindAbilityButton(gui, abilityName)
+    for _, d in ipairs(gui:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text == abilityName then
+            local node = d
+            while node and node ~= gui do
+                if node:IsA("GuiButton") then return node end
+                node = node.Parent
+            end
+        end
+    end
+    return nil
+end
+
 function BuffEngine.Send(unit, group, name, config, valid)
     if not valid() or not BuffEngine.Ready(unit, group, name, config) then return false end
     local input = game.ReplicatedStorage.Remotes.Input
@@ -2076,26 +2261,23 @@ function BuffEngine.Send(unit, group, name, config, valid)
         return true
     end
     if BuffEngine.MultipleBusy then return false end
-    local existing = GUI:FindFirstChild("MultipleAbilities")
-    -- Do not select an option from another unit's already-open menu.
-    if existing and existing.Enabled then return false end
+    local menu = GUI:FindFirstChild("MultipleAbilities")
+    -- Another unit's menu is open and doesn't contain our option; don't pick from it.
+    if menu and not FindAbilityButton(menu, config["Ability Name"]) and menu.Enabled then
+        return false
+    end
     BuffEngine.MultipleBusy = true
     local success, sent = pcall(function()
         input:FireServer("UseSpecialMove", unit, argument)
         local deadline = os.clock() + 4
         repeat
-            if not valid() or not BuffEngine.Matches(unit,name,config) then return false end
-            local menu = GUI:FindFirstChild("MultipleAbilities")
-            local frame = menu and menu:FindFirstChild("Frame")
-            if menu and menu.Enabled and frame and frame.Visible then
-                for _, button in ipairs(frame:GetChildren()) do
-                    local label = button:FindFirstChild("TextLabel")
-                    if button:IsA("GuiButton") and label and label.Text == config["Ability Name"] then
-                        if valid() and BuffEngine.Matches(unit,name,config) then
-                            firesignal(button.Activated)
-                            return true
-                        end
-                    end
+            if not valid() or unit.Parent == nil then return false end
+            local current = GUI:FindFirstChild("MultipleAbilities")
+            if current then
+                local button = FindAbilityButton(current, config["Ability Name"])
+                if button and valid() and unit.Parent ~= nil then
+                    firesignal(button.Activated)
+                    return true
                 end
             end
             task.wait(0.1)
