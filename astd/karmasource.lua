@@ -295,7 +295,7 @@ local DefaultSettings = {
     auto_join_tower = false,
     auto_join_delay = 5,
     auto_join_mode = "Infinite",
-    auto_join_story_level = 1,
+    auto_join_story_level = 181,
     auto_join_infinite_level = "-1.7",
     auto_join_trial_level = 1,
     auto_join_raid_level = 1,
@@ -469,30 +469,22 @@ Save()
 print("[KarmaPanda] Filesystem Loaded: " .. os.clock() - benchmark_time)
 benchmark_time = os.clock()
 
--- Detect the server's saved story level; use it directly without an offset.
+-- Story level: keep the saved value across rejoins; use 181 only when nothing valid is saved.
+local FORCED_STORY_LEVEL = 181
 local StoryLevelControl
-local function DetectStoryLevel()
-    local ok, result = pcall(function()
-        local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes", 10)
-        local server = remotes and remotes:WaitForChild("Server", 10)
-        if not server then error("Story data remote is unavailable") end
-        return server:InvokeServer("Data", "StoryLevel")
-    end)
 
-    local level = ok and tonumber(result) or nil
-    if not level or level ~= level or level == math.huge or level < 1 or level % 1 ~= 0 then
-        warn("[KarmaPanda] Could not detect a valid StoryLevel; keeping saved level. Result:", result)
-        return false
+local function ApplyStoryLevel()
+    local level = tonumber(Settings.auto_join_story_level)
+    if not level or level ~= level or level < 1 or level % 1 ~= 0 then
+        level = FORCED_STORY_LEVEL
     end
-
     Settings.auto_join_story_level = level
     Save()
     if StoryLevelControl then StoryLevelControl:Set(level, true) end
-    print("[KarmaPanda] Detected and saved Story Level:", level)
-    return true
 end
 
-DetectStoryLevel()
+ApplyStoryLevel()
+
 -- Game Helper Variables
 local Player = game.Players.LocalPlayer
 local GUI = Player.PlayerGui
@@ -1846,8 +1838,22 @@ function OnGameEnd()
     end
 end
 
+-- FPS Boost: loads the remote script once per session.
+local fpsBoostStarted = false
+
 function FpsBoost()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/astd/FpsBoost"))()
+    if fpsBoostStarted then return end
+    fpsBoostStarted = true
+    local ok, err = pcall(function()
+        local source = game:HttpGet("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/astd/FpsBoost.lua")
+        local chunk, loadErr = loadstring(source)
+        assert(chunk, loadErr)
+        chunk()
+    end)
+    if not ok then
+        fpsBoostStarted = false
+        warn("[KarmaPanda] FPS Boost failed: " .. tostring(err))
+    end
 end
 
 local linkport = ""
@@ -2248,7 +2254,6 @@ end
 
 function AutoJoinGame()
     while MacroLoadout.Busy do task.wait(0.2) end
-    if Settings.auto_join_mode == "Story" then DetectStoryLevel() end
     local function UseTeleporter(teleporter)
         if teleporter ~= nil then
             firetouchinterest(Player.Character.HumanoidRootPart, teleporter, 0)
@@ -2442,9 +2447,11 @@ if get_world() ~= -1 and get_world() ~= -2 then
         if Settings.auto_join_tower then task.spawn(AutoTower) end
     end
     if Settings.auto_skip_gui then task.spawn(AutoSkipGUI) end
-    if Settings.FPSBoost then task.spawn(FpsBoost) end
     if Settings.anonymous_mode then task.spawn(AnonMode) end
 end
+
+-- FPS Boost runs in both lobby and matches when the saved toggle is on.
+if Settings.fps_boost then task.spawn(FpsBoost) end
 
 if get_world() == -2 and Settings.auto_join_game then task.spawn(AutoJoinGame) end
 
@@ -3474,7 +3481,9 @@ function InitializeUI()
         local Miscellaneous = Window:CreateTab({name = "Miscellaneous"})
 
         Heading(Miscellaneous, "Game Settings")
-        AddToggle(Miscellaneous, "FPS Boost", "fps_boost")
+        AddToggle(Miscellaneous, "FPS Boost", "fps_boost", function(value)
+            if value then task.spawn(FpsBoost) end
+        end)
         AddToggle(Miscellaneous, "Anti-AFK", "anti_afk", function()
             for _, v in pairs(getconnections(game.Players.LocalPlayer.Idled)) do v:Disable() end
         end)
