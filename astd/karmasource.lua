@@ -105,7 +105,7 @@ end
 
 local version = "4.1"
 
-local UpdateLogUrl = "https://raw.githubusercontent.com/Jeikaru/Roblox-1/refs/heads/main/updatelogs.txt"
+local UpdateLogUrl = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/astd/updatelogs.txt"
 local Settings
 local Macros = {}
 
