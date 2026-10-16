@@ -1,0 +1,16 @@
+Key:UpdateV4.1
+
+Update V4.1
+
++ Added Update Log (Removes after second execute)
+
+Small Changes:
+
+Reorganized Main, Macro, Lobby, Webhooks, Advanced Settings, and Miscellaneous into two columns.
+Moved Automation to the right column of Main, below GUI Scripts.
+Moved World Teleports from Miscellaneous to the left column of Lobby.
+Moved Remote Refiring to the right column of Advanced Settings, below Action Queue.
+
+Only Ui change expect no bugs
+
+report bugs at https://github.com/Jeikaru/Roblox-1/pulls
