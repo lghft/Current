@@ -142,7 +142,7 @@ if not Rayfield then
     end
 end
 local Window = Rayfield:CreateWindow({
-    name = string.format("KarmaPanda's ASTD | v%s", version),
+    name = "KarmaPanda's ASTD",
     subtitle = "All Star Tower Defense",
     sidebarLayout = true,
     showName = "KarmaPanda",
@@ -3717,6 +3717,41 @@ function InitializeUI()
         Heading(Credits, "Credits")
         AddText(Credits, "Made by KarmaPanda & Maintained by Jeikaru",
             "UI powered by Rayfield Gen2. Thanks to all the supporters and donators! Join our Discord: https://discord.gg/BrnQQGKbvE")
+        return Credits
+    end
+
+    ---------------------------------------------------------------------
+    -- Update Log
+    ---------------------------------------------------------------------
+    local function UpdateLogSettings(Log)
+        Heading(Log, "Latest Update")
+        local LogText = AddText(Log, nil, "Loading update notes...")
+
+        local function LoadNotes()
+            local fetched, source = pcall(function() return game:HttpGet(UpdateLogUrl) end)
+            if not fetched or type(source) ~= "string" then
+                SetText(LogText, nil, "Could not load update notes. Use Refresh Update Log to try again.")
+                return
+            end
+            -- The first line is the update key; only the notes below it are shown.
+            source = source:gsub("^\239\187\191", ""):gsub("\r\n", "\n"):gsub("\r", "\n")
+            local _, notes = source:match("^([^\n]*)\n(.*)$")
+            notes = (notes or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if notes == "" then
+                SetText(LogText, nil, "No update notes found.")
+            else
+                SetText(LogText, nil, notes)
+            end
+        end
+
+        Log:CreateButton({
+            name = "Refresh Update Log",
+            callback = function()
+                SetText(LogText, nil, "Loading update notes...")
+                task.spawn(LoadNotes)
+            end
+        })
+        task.spawn(LoadNotes)
     end
 
     -- Sidebar groups (only drawn in the sidebar layout).
@@ -3729,7 +3764,7 @@ function InitializeUI()
     AdvancedSettings()
     MiscellaneousSettings()
     Window:CreateSection({name = "About"})
-    CreditsSettings()
+    UpdateLogSettings(CreditsSettings())
     CreateMiniGUI()
 
     -- Anything Rayfield queued while the controls were being created runs first,
