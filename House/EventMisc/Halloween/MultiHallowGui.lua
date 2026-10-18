@@ -17,8 +17,25 @@ while not player do
     player = Players.LocalPlayer
 end
 
+-- Unload any previous run of this script so only the newest execution is active
+local env = (getgenv and getgenv()) or _G
+if type(env.CANDY_LOOP_UNLOAD) == "function" then
+    local okUnload, errUnload = pcall(env.CANDY_LOOP_UNLOAD)
+    if not okUnload then
+        warn("[Candy Loop] Failed to unload previous run: " .. tostring(errUnload))
+    end
+end
+env.CANDY_LOOP_UNLOAD = nil
+
+-- Remove any GUI left behind by a previous run that didn't register an unload function
+local staleGui = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("CandyFeedGui")
+if staleGui then
+    staleGui:Destroy()
+end
+
 -- State
 local looping = false     -- Candy feed loop
+local autoFeedMode = 1    -- 1 = single toss (TossSpot), 2 = bulk toss (TossCandyBulk)
 local running = true      -- Master flag for all loops
 local connections = {}
 local statusLabel = nil   -- Assigned when the GUI is built (declared early so helpers can use it)
@@ -86,11 +103,320 @@ local LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/hea
 local WORLDBOSS_INTERVAL = 5    -- Minimum seconds between WorldBossEnter fires
 local UNKNOWN_TIMEOUT = 15      -- Seconds a system can stay "unknown" before it's treated as not ready
 local lastWorldBossFire = 0
-local autoWorldBossEnabled = true   -- Auto WorldBoss toggle: gates the world boss remote and the loadstring fallback
+local autoWorldBossEnabled = true   -- Auto WorldBoss toggle: gates the world boss remote and its loadstring
+
+-- Auto Storm Boss: same as World Boss, but uses its own loadstring and a lobby script instead of the remote
+local STORMBOSS_LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoStormBoss.lua"
+local STORMBOSS_LOBBY_SCRIPT = [==[
+-- Lobby Automation Script for LabRooms (with failsafes)
+local env = (getgenv and getgenv()) or _G
+
+-- Prevents overlapping runs. Treats a flag older than 120s as stale, in case a previous run crashed.
+if env.LABROOM_LOBBY_RUNNING and os.clock() - (env.LABROOM_LOBBY_STARTED or 0) < 120 then
+    return
+end
+env.LABROOM_LOBBY_RUNNING = true
+env.LABROOM_LOBBY_STARTED = os.clock()
+
+local function finish()
+    env.LABROOM_LOBBY_RUNNING = false
+end
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+if game.PlaceId ~= 131367064230486 then
+    finish()
+    return
+end
+
+local Players = game:GetService("Players")
+local GuiService = game:GetService("GuiService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+
+-- SETTINGS
+local LOBBY_POSITION = Vector3.new(3000, 91, 6062)
+local SELECTED_MAP_NUMBER = 3     -- Select a map: 1-5
+local MAX_ATTEMPTS = 3            -- Full run retries before giving up
+local RETRY_DELAY = 5             -- Seconds between attempts
+local STEP_TIMEOUT = 15           -- Max seconds to wait on one step (teleport, character, etc.)
+local WALK_TIMEOUT = 30           -- Max seconds to walk to the door
+local WAIT_FOR_GUI_TIMEOUT = 10
+
+local DOOR_KEYS = {
+    [1] = "1_ClockTower",
+    [2] = "2_DemonLab",
+    [3] = "3_StormEngine",
+    [4] = "4_HolyLab",
+    [5] = "5_CrazyLab",
+}
+
+local function log(...)
+    print("[Lobby]", ...)
+end
+
+-- Safe lookups: return nil instead of throwing when something is missing
+local function getEntry(mapNumber)
+    local lobby = workspace:FindFirstChild("ClockTowerLobby")
+    local doors = lobby and lobby:FindFirstChild("LabDoors")
+    local door = doors and DOOR_KEYS[mapNumber] and doors:FindFirstChild(DOOR_KEYS[mapNumber])
+    return door and door:FindFirstChild("LabRoomEntry")
+end
+
+local function getEnterPrompt(entry)
+    return entry:FindFirstChild("EnterPrompt", true)
+        or entry:FindFirstChildWhichIsA("ProximityPrompt", true)
+end
+
+-- Works whether the entry is a Part or a Model
+local function getEntryPosition(entry)
+    if entry:IsA("BasePart") then return entry.Position end
+    if entry:IsA("Model") then return entry:GetPivot().Position end
+    return nil
+end
+
+-- Always reads the current character, so respawns don't leave stale references
+local function getRoot()
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if root and hum and hum.Health > 0 then
+        return root, hum
+    end
+    return nil
+end
+
+local function waitForCharacter(timeout)
+    local deadline = os.clock() + timeout
+    while os.clock() < deadline do
+        local root, hum = getRoot()
+        if root then return root, hum end
+        task.wait(0.2)
+    end
+    return nil
+end
+
+local function isNearLobby()
+    local root = getRoot()
+    return root ~= nil and (root.Position - LOBBY_POSITION).Magnitude < 30
+end
+
+-- Teleports to the lobby and confirms the character actually arrived
+local function teleportToLobby()
+    GuiService:SetGameplayPausedNotificationEnabled(false)
+
+    local root = waitForCharacter(STEP_TIMEOUT)
+    if not root then
+        log("No character found for teleport")
+        return false
+    end
+
+    root.CFrame = CFrame.new(LOBBY_POSITION)
+
+    local deadline = os.clock() + STEP_TIMEOUT
+    task.wait(0.5)
+    while os.clock() < deadline do
+        local r = getRoot()
+        if r and not player:GetAttribute("Teleporting") and (r.Position - LOBBY_POSITION).Magnitude < 30 then
+            task.wait(1)
+            return true
+        end
+        task.wait(0.2)
+    end
+
+    log("Teleport timeout")
+    return false
+end
+
+-- Walks to a target. If the character stops making progress, it teleports closer.
+local function walkTo(target, stopDistance)
+    local root, hum = getRoot()
+    if not root then return false end
+
+    hum:MoveTo(target)
+    local deadline = os.clock() + WALK_TIMEOUT
+    local lastPos = root.Position
+    local lastProgress = os.clock()
+
+    while os.clock() < deadline do
+        root, hum = getRoot()
+        if not root then
+            log("Character lost during walk")
+            return false
+        end
+
+        if (root.Position - target).Magnitude <= stopDistance then
+            hum:MoveTo(root.Position)
+            return true
+        end
+
+        if (root.Position - lastPos).Magnitude > 1 then
+            lastPos = root.Position
+            lastProgress = os.clock()
+        elseif os.clock() - lastProgress > 3 then
+            log("Stuck while walking, teleporting closer")
+            root.CFrame = CFrame.new(target + Vector3.new(0, 3, 0))
+            hum:MoveTo(target)
+            lastPos = root.Position
+            lastProgress = os.clock()
+            task.wait(0.3)
+        end
+
+        task.wait(0.1)
+    end
+
+    log("Walking timeout")
+    return false
+end
+
+local function firePrompt(prompt)
+    if type(fireproximityprompt) ~= "function" then
+        log("fireproximityprompt is not available in this executor")
+        return false
+    end
+    local ok, err = pcall(fireproximityprompt, prompt)
+    if not ok then
+        log("Prompt failed: " .. tostring(err))
+    end
+    return ok
+end
+
+local function waitForGUI(timeout)
+    local playerGui = player:WaitForChild("PlayerGui", 5)
+    if not playerGui then
+        log("PlayerGui not found")
+        return false
+    end
+
+    local deadline = os.clock() + timeout
+    while os.clock() < deadline do
+        local mainHud = playerGui:FindFirstChild("MainHud")
+        if mainHud and mainHud:FindFirstChild("Hud") then
+            task.wait(1.5)
+            return true
+        end
+        task.wait(0.3)
+    end
+
+    log("GUI did not appear within " .. timeout .. "s")
+    return false
+end
+
+-- Looks up the lab remote once. Returns nil if it can't be found.
+local function getLabEvent()
+    local ok, ev = pcall(function()
+        return ReplicatedStorage:WaitForChild("Modules", 5)
+            :WaitForChild("Remotes", 5)
+            :WaitForChild("RemoteEvent", 5)
+            :WaitForChild("LabRooms", 5)
+    end)
+    return ok and ev or nil
+end
+
+-- One full attempt. Returns true only if every step succeeded.
+local function runOnce()
+    -- Step 1: Teleport to lobby, skipping it if already there
+    if not isNearLobby() then
+        if not teleportToLobby() then return false end
+    end
+    task.wait(0.2)
+
+    -- Step 2: Find the door and its prompt
+    local entry = getEntry(SELECTED_MAP_NUMBER)
+    if not entry then
+        log("Door for map " .. SELECTED_MAP_NUMBER .. " not found")
+        return false
+    end
+    local targetPos = getEntryPosition(entry)
+    if not targetPos then
+        log("Door has no usable position")
+        return false
+    end
+
+    -- Step 3: Walk to the door
+    if not walkTo(targetPos, 8) then
+        log("Could not reach door")
+        return false
+    end
+    task.wait(0.2)
+
+    -- Step 4: Fire the enter prompt
+    local prompt = getEnterPrompt(entry)
+    if not prompt or not firePrompt(prompt) then
+        log("Could not trigger enter prompt")
+        return false
+    end
+    task.wait(0.5)
+
+    -- Step 5: Wait for the lab GUI
+    if not waitForGUI(WAIT_FOR_GUI_TIMEOUT) then
+        return false
+    end
+
+    -- Step 6: Set capacity and start (both need the remote)
+    local labEvent = getLabEvent()
+    if not labEvent then
+        log("LabRooms remote not found")
+        return false
+    end
+
+    local okCap = pcall(function()
+        labEvent:FireServer("setCapacity", 1)
+    end)
+    if not okCap then
+        log("Failed to set capacity")
+        return false
+    end
+    task.wait(0.5)
+
+    local okStart = pcall(function()
+        labEvent:FireServer("start")
+    end)
+    if not okStart then
+        log("Failed to start game")
+        return false
+    end
+
+    return true
+end
+
+local function main()
+    log("Script started. Map " .. SELECTED_MAP_NUMBER)
+
+    for attempt = 1, MAX_ATTEMPTS do
+        if env.LABROOM_LOBBY_ABORT then
+            log("Aborted")
+            break
+        end
+
+        log("Attempt " .. attempt .. " of " .. MAX_ATTEMPTS)
+        local ok, result = pcall(runOnce)
+        if not ok then
+            log("Attempt errored: " .. tostring(result))
+        elseif result then
+            log("Completed")
+            break
+        end
+
+        if attempt < MAX_ATTEMPTS then
+            task.wait(RETRY_DELAY)
+        end
+    end
+
+    finish()
+end
+
+task.spawn(main)
+]==]
+local stormLobbyRanThisVisit = false  -- Storm lobby script runs once per lobby visit
+local lobbyArrivedAt = nil            -- When the player arrived in the lobby (used for the settle delay)
+local LOBBY_SETTLE_TIME = 15          -- Seconds to let Trick or Treat doors load before Storm runs
+local autoStormBossEnabled = true
 
 -- =========================
 -- Candy feed
 -- =========================
+-- Returns the candy prompt for the current feed mode, or nil if any part of the path is missing.
+-- Mode 1 = single toss (TossSpot), Mode 2 = bulk toss (TossCandyBulk).
 local function getPrompt()
     local halloweenTown = workspace:FindFirstChild("HalloweenTown")
     if not halloweenTown then return nil end
@@ -98,12 +424,16 @@ local function getPrompt()
     if not unitShowcase then return nil end
     local fountain = unitShowcase:FindFirstChild("Fountain")
     if not fountain then return nil end
-    local tossSpot = fountain:FindFirstChild("TossSpot")
-    if not tossSpot then return nil end
-    local promptSpot = tossSpot:FindFirstChild("PromptSpot")
-    if not promptSpot then return nil end
 
-    return promptSpot:FindFirstChild("TossCandy")
+    if autoFeedMode == 2 then
+        local bulk = fountain:FindFirstChild("TossSpotBulk")
+        local bulkSpot = bulk and bulk:FindFirstChild("PromptSpot")
+        return bulkSpot and bulkSpot:FindFirstChild("TossCandyBulk")
+    end
+
+    local tossSpot = fountain:FindFirstChild("TossSpot")
+    local promptSpot = tossSpot and tossSpot:FindFirstChild("PromptSpot")
+    return promptSpot and promptSpot:FindFirstChild("TossCandy")
 end
 
 -- =========================
@@ -251,6 +581,29 @@ local function goToLobby()
     return ok
 end
 
+-- Moves the player with the game's own remotes.
+-- "halloween" sends them to the Halloween lobby for Trick or Treat.
+-- "clocktower" sends them to the ClockTower for the Storm lobby.
+local function teleportViaRemotes(destination)
+    local ok, err = pcall(function()
+        local remotes = ReplicatedStorage.Modules.Remotes
+        if destination == "halloween" then
+            remotes.RemoteFunction.PreloadFloor:InvokeServer("EventTown", 1)
+            remotes.RemoteEvent.MoveToEventTown:FireServer(nil)
+        elseif destination == "clocktower" then
+            remotes.RemoteFunction.PreloadFloor:InvokeServer("EventTown", 2)
+            remotes.RemoteEvent.MoveToEventTown:FireServer("ClockTower")
+        end
+    end)
+    if not ok then
+        warn("[Candy Loop] Remote teleport to " .. tostring(destination) .. " failed: " .. tostring(err))
+    end
+    return ok
+end
+
+-- Throttles the ClockTower trip so the Storm branch doesn't re-fire it every loop
+local lastStormTravel = 0
+
 -- Fires the world boss enter remote, throttled so it isn't spammed
 local function tryWorldBossEnter()
     if os.clock() - lastWorldBossFire < WORLDBOSS_INTERVAL then return end
@@ -263,15 +616,33 @@ local function tryWorldBossEnter()
     end
 end
 
--- Runs the loadstring URL once per game session, even if this script is executed again.
--- The flag lives in the executor's global environment so it survives re-execution.
-local function runLoadstringOnce()
+-- Runs the Storm Boss lobby script once per lobby visit. The flag resets when you leave the lobby.
+local function tryStormBossLobby()
+    if stormLobbyRanThisVisit then return end
+
+    if STORMBOSS_LOBBY_SCRIPT == "" then
+        warn("[Candy Loop] Storm Boss lobby script is empty")
+        return
+    end
+
+    stormLobbyRanThisVisit = true
+    local ok, err = pcall(function()
+        loadstring(STORMBOSS_LOBBY_SCRIPT)()
+    end)
+    if not ok then
+        warn("[Candy Loop] Storm Boss lobby script failed: " .. tostring(err))
+    end
+end
+
+-- Runs a loadstring URL once per game session, even if this script is executed again.
+-- Each URL gets its own flag in the executor's global environment.
+local function runLoadstringOnce(url, flagKey)
     local env = (getgenv and getgenv()) or _G
-    if env.CANDY_LOADSTRING_RAN or LOADSTRING_URL == "" then return end
-    env.CANDY_LOADSTRING_RAN = true
+    if env[flagKey] or url == "" then return end
+    env[flagKey] = true
 
     local ok, err = pcall(function()
-        loadstring(game:HttpGet(LOADSTRING_URL))()
+        loadstring(game:HttpGet(url))()
     end)
     if not ok then
         warn("[Candy Loop] loadstring failed: " .. tostring(err))
@@ -714,6 +1085,7 @@ local function runPumpkinRoute()
     local root = getRoot()
     if not root or (root.Position - PUMPKIN_CONFIG.TELEPORT_POS).Magnitude > PUMPKIN_CONFIG.TELEPORT_RANGE then
         teleportTo(PUMPKIN_CONFIG.TELEPORT_POS)
+        game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
         task.wait(0.15)
     end
 
@@ -907,6 +1279,7 @@ end
 -- then equips the scythe once every stop is finished.
 local function runGraveRoute()
     teleportTo(GRAVE_CONFIG.TELEPORT_POS)
+    game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
     task.wait(0.3)
     equipShovel()
     task.wait(0.3)
@@ -1123,6 +1496,7 @@ end
 -- until none are left
 local function runTrickRoute()
     teleportTo(TRICK_CONFIG.START_POS)
+    game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
     task.wait(0.3)
 
     local failed = {}
@@ -1287,9 +1661,14 @@ local function trickStatus()
     return "notready"
 end
 
--- The priority routes only run when Pumpkin, Graveyard, Trick or Treat, and Auto WorldBoss are all ON
+-- Either boss toggle counts, so Storm Boss alone still lets the other 3 priorities run
+local function bossEnabled()
+    return autoWorldBossEnabled or autoStormBossEnabled
+end
+
+-- The priority routes only run when Pumpkin, Graveyard, Trick or Treat, and a boss are all ON
 local function priorityEnabled()
-    return PUMPKIN_CONFIG.ENABLED and GRAVE_CONFIG.ENABLED and TRICK_CONFIG.ENABLED and autoWorldBossEnabled
+    return PUMPKIN_CONFIG.ENABLED and GRAVE_CONFIG.ENABLED and TRICK_CONFIG.ENABLED and bossEnabled()
 end
 
 -- Tracks how long the loop has been blocked by an unknown system.
@@ -1354,7 +1733,7 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.new(0, 360, 0, 430)
+frame.Size = UDim2.new(0, 360, 0, 500)
 frame.Position = UDim2.new(0.05, 0, 0.1, 0)
 frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 0
@@ -1526,7 +1905,7 @@ local espCorner = Instance.new("UICorner")
 espCorner.CornerRadius = UDim.new(0, 8)
 espCorner.Parent = espButton
 
--- Auto WorldBoss toggle (starts ON). Gates the world boss remote and the loadstring fallback.
+-- Auto WorldBoss toggle (starts ON). Gates the world boss remote and its loadstring.
 local worldBossButton = Instance.new("TextButton")
 worldBossButton.Name = "WorldBossButton"
 worldBossButton.Size = UDim2.new(1, -20, 0, 36)
@@ -1542,16 +1921,48 @@ local worldBossCorner = Instance.new("UICorner")
 worldBossCorner.CornerRadius = UDim.new(0, 8)
 worldBossCorner.Parent = worldBossButton
 
+-- Auto Storm Boss toggle (starts ON)
+local stormBossButton = Instance.new("TextButton")
+stormBossButton.Name = "StormBossButton"
+stormBossButton.Size = UDim2.new(1, -20, 0, 36)
+stormBossButton.Position = UDim2.new(0, 10, 0, 318)
+stormBossButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+stormBossButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stormBossButton.TextSize = 16
+stormBossButton.Font = Enum.Font.GothamBold
+stormBossButton.Text = "Auto Storm Boss: ON"
+stormBossButton.Parent = mainPage
+
+local stormBossCorner = Instance.new("UICorner")
+stormBossCorner.CornerRadius = UDim.new(0, 8)
+stormBossCorner.Parent = stormBossButton
+
+-- Feed mode toggle (single or bulk candy toss)
+local feedModeButton = Instance.new("TextButton")
+feedModeButton.Name = "FeedModeButton"
+feedModeButton.Size = UDim2.new(1, -20, 0, 36)
+feedModeButton.Position = UDim2.new(0, 10, 0, 362)
+feedModeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+feedModeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+feedModeButton.TextSize = 16
+feedModeButton.Font = Enum.Font.GothamBold
+feedModeButton.Text = "Feed Mode: Single"
+feedModeButton.Parent = mainPage
+
+local feedModeCorner = Instance.new("UICorner")
+feedModeCorner.CornerRadius = UDim.new(0, 8)
+feedModeCorner.Parent = feedModeButton
+
 local priorityLabel = Instance.new("TextLabel")
 priorityLabel.Name = "PriorityNote"
 priorityLabel.Size = UDim2.new(1, -20, 0, 36)
-priorityLabel.Position = UDim2.new(0, 10, 0, 318)
+priorityLabel.Position = UDim2.new(0, 10, 0, 406)
 priorityLabel.BackgroundTransparency = 1
 priorityLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
 priorityLabel.TextSize = 12
 priorityLabel.Font = Enum.Font.Gotham
 priorityLabel.TextWrapped = true
-priorityLabel.Text = "Priority: Pumpkin > Graveyard > TrickOrTreat (needs Pumpkin, Graves, Trick, and Auto WorldBoss all ON)"
+priorityLabel.Text = "Priority: Pumpkin > Graveyard > TrickOrTreat (needs Pumpkin, Graves, Trick, and a Boss toggle ON)"
 priorityLabel.Parent = mainPage
 
 -- Stats list (scrolls)
@@ -1965,6 +2376,8 @@ local function saveToggleStates()
         trick = TRICK_CONFIG.ENABLED,
         esp = ESP_ENABLED,
         worldBoss = autoWorldBossEnabled,
+        stormBoss = autoStormBossEnabled,
+        feedBulk = autoFeedMode == 2,
     })
 end
 
@@ -1975,6 +2388,9 @@ PUMPKIN_CONFIG.ENABLED = readSetting("pumpkin", true)
 GRAVE_CONFIG.ENABLED = readSetting("graves", true)
 TRICK_CONFIG.ENABLED = readSetting("trick", true)
 autoWorldBossEnabled = readSetting("worldBoss", true)
+autoStormBossEnabled = readSetting("stormBoss", true)
+autoFeedMode = readSetting("feedBulk", false) and 2 or 1
+feedModeButton.Text = autoFeedMode == 2 and "Feed Mode: Bulk" or "Feed Mode: Single"
 setESP(readSetting("esp", true))
 
 styleToggle(toggleButton, "Feed Loop", looping)
@@ -1983,6 +2399,7 @@ styleToggle(graveButton, "Graves", GRAVE_CONFIG.ENABLED)
 styleToggle(trickButton, "Trick or Treat", TRICK_CONFIG.ENABLED)
 styleToggle(espButton, "Door ESP", ESP_ENABLED)
 styleToggle(worldBossButton, "Auto WorldBoss", autoWorldBossEnabled)
+styleToggle(stormBossButton, "Auto Storm Boss", autoStormBossEnabled)
 
 saveToggleStates()
 
@@ -2019,6 +2436,18 @@ end))
 table.insert(connections, worldBossButton.MouseButton1Click:Connect(function()
     autoWorldBossEnabled = not autoWorldBossEnabled
     styleToggle(worldBossButton, "Auto WorldBoss", autoWorldBossEnabled)
+    saveToggleStates()
+end))
+
+table.insert(connections, stormBossButton.MouseButton1Click:Connect(function()
+    autoStormBossEnabled = not autoStormBossEnabled
+    styleToggle(stormBossButton, "Auto Storm Boss", autoStormBossEnabled)
+    saveToggleStates()
+end))
+
+table.insert(connections, feedModeButton.MouseButton1Click:Connect(function()
+    autoFeedMode = autoFeedMode == 2 and 1 or 2
+    feedModeButton.Text = autoFeedMode == 2 and "Feed Mode: Bulk" or "Feed Mode: Single"
     saveToggleStates()
 end))
 
@@ -2175,12 +2604,12 @@ task.spawn(function()
 end)
 
 -- Decision loop:
---   priority paused (any of Pumpkin, Graves, Trick, Auto WorldBoss OFF) -> no routes
+--   priority paused (any of Pumpkin, Graves, Trick, or both boss toggles OFF) -> no routes
 --   unknown                    -> wait (up to UNKNOWN_TIMEOUT, then treated as not ready)
 --   ready + outside lobby      -> teleport to lobby, then wait for the load
 --   ready + inside lobby       -> run the highest-priority ready route
---   not ready + inside lobby   -> fire WorldBossEnter (throttled), only if Auto WorldBoss is ON
---   not ready + outside lobby  -> run the loadstring URL once, only if Auto WorldBoss is ON
+--   not ready + inside lobby   -> World Boss remote if ON, else Storm lobby script if ON (once per visit)
+--   not ready + outside lobby  -> World Boss loadstring if ON, else Storm loadstring if ON (once per session)
 task.spawn(function()
     while running do
         -- Don't make any decision while the teleport screen is still up
@@ -2188,6 +2617,14 @@ task.spawn(function()
 
         local state, route = decideRoute()
         local atLobby = inLobby()
+
+        -- Track lobby arrival. Re-arm the Storm lobby script once we leave, so it runs again next visit
+        if atLobby then
+            lobbyArrivedAt = lobbyArrivedAt or os.clock()
+        else
+            lobbyArrivedAt = nil
+            stormLobbyRanThisVisit = false
+        end
 
         if state == "unknown" then
             if statusLabel then
@@ -2200,6 +2637,10 @@ task.spawn(function()
                 statusLabel.Text = "Status: Teleporting to lobby for " .. (route or "unknown")
                 statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
             end
+            if route == "trick" then
+                teleportViaRemotes("halloween")
+                task.wait(10)
+            else
             goToLobby()
             task.spawn(function()
                 local targetCode2 = "20187371346491136469671725312837"--htd
@@ -2216,6 +2657,7 @@ task.spawn(function()
                     linkCode = tostring(targetCode2)
                 })
             end)
+            end
         elseif state == "ready" and atLobby then
             if statusLabel then
                 statusLabel.Text = "Status: Running " .. (route or "unknown") .. " route"
@@ -2229,9 +2671,24 @@ task.spawn(function()
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
                 tryWorldBossEnter()
+            elseif autoStormBossEnabled then
+                -- Give Trick or Treat doors time to stream in before the one-shot Storm script runs
+                local settled = os.clock() - (lobbyArrivedAt or 0) >= LOBBY_SETTLE_TIME
+                if not settled then
+                    if statusLabel then
+                        statusLabel.Text = "Status: In lobby, checking for trick or treat first..."
+                        statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+                    end
+                else
+                    if statusLabel then
+                        statusLabel.Text = "Status: In lobby, running Storm Boss script..."
+                        statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+                    end
+                    tryStormBossLobby()
+                end
             else
                 if statusLabel then
-                    statusLabel.Text = "Status: In lobby, Auto WorldBoss is OFF"
+                    statusLabel.Text = "Status: In lobby, Auto Bosses are OFF"
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
             end
@@ -2241,10 +2698,21 @@ task.spawn(function()
                     statusLabel.Text = "Status: Nothing ready, running backup..."
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
-                runLoadstringOnce()
+                runLoadstringOnce(LOADSTRING_URL, "CANDY_LOADSTRING_RAN")
+            elseif autoStormBossEnabled then
+                if statusLabel then
+                    statusLabel.Text = "Status: Nothing ready, running Storm backup..."
+                    statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+                end
+                if os.clock() - lastStormTravel > 30 then
+                    lastStormTravel = os.clock()
+                    teleportViaRemotes("clocktower")
+                    task.wait(5)
+                end
+                runLoadstringOnce(STORMBOSS_LOADSTRING_URL, "CANDY_STORMBOSS_LOADSTRING_RAN")
             else
                 if statusLabel then
-                    statusLabel.Text = "Status: Nothing ready, Auto WorldBoss is OFF"
+                    statusLabel.Text = "Status: Nothing ready, Auto Bosses are OFF"
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
             end
@@ -2291,3 +2759,5 @@ end
 table.insert(connections, yesButton.MouseButton1Click:Connect(function()
     unload()
 end))
+
+env.CANDY_LOOP_UNLOAD = unload
