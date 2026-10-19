@@ -2,6 +2,7 @@ Key:UpdateV4.3
 
 Update V4.3
 Added Seamless Replay Support?
+Added Upgrade To Level to Macro Record/Playback
 
 Update V4.2
 
