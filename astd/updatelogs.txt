@@ -1,4 +1,7 @@
-Key:UpdateV4.2
+Key:UpdateV4.3
+
+Update V4.3
+Added Seamless Replay Support?
 
 Update V4.2
 
