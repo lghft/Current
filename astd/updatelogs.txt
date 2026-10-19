@@ -2,8 +2,6 @@ Key:UpdateV4.2
 
 Update V4.2
 
-+ Added Update Log (Removes after second execute)
-
 Small Changes:
 
 Added Start after time:0 steps (better to use auto start though)
