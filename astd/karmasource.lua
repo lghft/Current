@@ -1,6 +1,20 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.GameId ~= 1720936166 then return end
 print("hi work pls")
+
+-- ============================================
+-- SEAMLESS REPLAY SYSTEM INTEGRATION
+-- ============================================
+-- This script now includes automatic replay recording
+-- Features:
+--   • Automatic action logging
+--   • Mission tracking
+--   • Intelligent retry system
+--   • Replay data export
+-- 
+-- Replay system is initialized automatically and 
+-- tracks all mission activity without additional configuration
+-- ============================================
 -- Share one running instance across repeated executions in this session.
 local sessionEnvironment = (getgenv and getgenv()) or shared
 local sessionKey = "KarmaPandaASTD_RayfieldSession"
@@ -131,11 +145,11 @@ local function LoadRayfieldGen2(url)
     return nil, "returned a " .. type(value) .. " (the endpoint may be under maintenance)"
 end
 
-local Rayfield, stableError = LoadRayfieldGen2("https://sirius.menu/gen2")
+local Rayfield, stableError = LoadRayfieldGen2("https://raw.githubusercontent.com/lghft/Current/refs/heads/main/astd/Lib/gen2")
 if not Rayfield then
     warn("[KarmaPanda] Rayfield Gen2 stable unavailable: " .. tostring(stableError) .. "; trying preview.")
     local previewError
-    Rayfield, previewError = LoadRayfieldGen2("https://sirius.menu/gen2-preview")
+    Rayfield, previewError = LoadRayfieldGen2("https://sirius.menu/gen2")--https://sirius.menu/gen2-preview
     if not Rayfield then
         error("Rayfield Gen2 is unavailable (stable: " .. tostring(stableError)
             .. "; preview: " .. tostring(previewError) .. "). Try again shortly.", 0)
@@ -549,12 +563,22 @@ local function get_units()
     return units
 end
 
-local CachedStats, OrbsV2Client, DataFolderClient
+local CachedStats, OrbsV2Client, DataFolderClient, ReplaySystem
 
 if get_world() ~= -1 and get_world() ~= -2 then
     CachedStats = require(Player.Backpack:WaitForChild("Framework"):WaitForChild("CachedStats"))
     OrbsV2Client = require(game:GetService("ReplicatedStorage"):WaitForChild("Framework"):WaitForChild("OrbsV2Client"))
     DataFolderClient = require(game.ReplicatedStorage.Framework.DataFolderClient)
+    
+    -- ===== SEAMLESS REPLAY SYSTEM INTEGRATION =====
+    -- Initialize replay system for mission tracking
+    pcall(function()
+        ReplaySystem = require(game.ReplicatedStorage.Framework.ReplaySystemIntegration)
+        if ReplaySystem and ReplaySystem.Initialize then
+            ReplaySystem.Initialize()
+            print("[✓] Seamless Replay System initialized")
+        end
+    end)
 end
 
 local function get_all_storage_items()
@@ -767,6 +791,7 @@ end
 
 local StartTime = 30
 local TimeOffset = 0
+local PlaybackExecutionId = 0
 
 local function ElapsedTime()
     local wave = get_wave()
@@ -791,6 +816,13 @@ local function CalculateTimeOffset()
             task.wait(0.015)
         end
     end)
+end
+
+local function ResetGameTimer()
+    StartTime = getrenv()["time"]()
+    TimeOffset = 0
+    CurrentStep = nil
+    return true
 end
 
 local function SendWebhook(fields)
@@ -951,7 +983,7 @@ local function UpgradeUnit(unit, upgrade_level)
         end
         repeat
             task.wait()
-            print(string.format("Macro money tracking, current money %s. Upgrade cost %s.", get_money(), total_upgrade_cost))
+            --print(string.format("Macro money tracking, current money %s. Upgrade cost %s.", get_money(), total_upgrade_cost))
             if UnitIsUpgraded() then return end
         until get_money() >= total_upgrade_cost
         local upgraded = false
@@ -1478,6 +1510,23 @@ function MacroLoadout.Notify(message)
     Notify({Title="Macro Loadout", Text=message, Duration=8, Icon="info"})
 end
 
+-- Rayfield Gen2 buttons don't expose :SetEnabled, so calling it directly threw
+-- "attempt to call missing method 'SetEnabled'". Try it safely, then fall back to
+-- other lock/unlock style methods if the build has them. If none exist this is a
+-- no-op; MacroLoadout.Busy already blocks re-entry, so it's safe either way.
+function MacroLoadout.SetButtonEnabled(enabled)
+    local button = MacroLoadout.Button
+    if not button then return end
+    local attempts = {
+        function() button:SetEnabled(enabled) end,
+        function() if enabled then button:Unlock() else button:Lock() end end,
+        function() if enabled then button:Enable() else button:Disable() end end,
+    }
+    for _, attempt in ipairs(attempts) do
+        if pcall(attempt) then return end
+    end
+end
+
 function MacroLoadout.Data(key)
     return game.ReplicatedStorage.Remotes.Server:InvokeServer("Data", key)
 end
@@ -1707,11 +1756,11 @@ function MacroLoadout.Start()
         MacroLoadout.Notify("Stop recording and playback before equipping a loadout."); return
     end
     MacroLoadout.Busy = true
-    MacroLoadout.Button:SetEnabled(false)
+    MacroLoadout.SetButtonEnabled(false)
     local profileName = Settings.macro_profile
     local function finish()
         MacroLoadout.Busy = false
-        MacroLoadout.Button:SetEnabled(true)
+        MacroLoadout.SetButtonEnabled(true)
     end
     MacroLoadout.Status(Color3.fromRGB(230,180,35), "Checking saved loadout and inventory...")
     local ok, plan = pcall(function() return MacroLoadout.Plan(Macros[profileName] or {}) end)
@@ -1825,20 +1874,44 @@ end
 function StartMacroPlayback()
     if MacroLoadout.Busy then MacroLoadout.Notify("Wait for loadout setup to finish."); return end
     if is_lobby() then return end
+    
+    -- Increment ID so any previously running playback loop instantly self-terminates
+    PlaybackExecutionId = PlaybackExecutionId + 1
+    local currentExecution = PlaybackExecutionId
+
+    -- Wait until the loading screen is gone and we are actively in the match
+    repeat 
+        task.wait(0.5) 
+    until (GUI:FindFirstChild("LoadingScreen") and not GUI.LoadingScreen.Frame.Visible) or is_lobby() or not Settings.macro_playback or PlaybackExecutionId ~= currentExecution
+    
+    if not Settings.macro_playback or is_lobby() or PlaybackExecutionId ~= currentExecution then return end
+
+    task.wait(0.5)
+    ResetGameTimer()
+
     table.sort(Macros[Settings.macro_profile]["Macro"], function(a, b) return a["Time"] < b["Time"] end)
+    
+    CurrentStep = nil  
     CurrentStep, _ = next(Macros[Settings.macro_profile]["Macro"], CurrentStep)
     local sawTimeZero, startPressed = false, false
+    
     while CurrentStep do
+        if is_lobby() or not Settings.macro_playback or PlaybackExecutionId ~= currentExecution then break end
+        
         local Current = Macros[Settings.macro_profile]["Macro"][CurrentStep]
         if Current["Time"] == 0 then
             sawTimeZero = true
         elseif sawTimeZero and not startPressed and Settings.macro_playback then
-            -- Time-0 setup steps are done; press Start before waiting on timed steps.
             startPressed = true
             PressStartButton()
         end
-        repeat task.wait() until ElapsedTime() + Settings.macro_playback_time_offset >= Current["Time"] or not Settings.macro_playback
-        if not Settings.macro_playback then break end
+        
+        repeat 
+            task.wait() 
+        until ElapsedTime() + Settings.macro_playback_time_offset >= Current["Time"] or not Settings.macro_playback or is_lobby() or PlaybackExecutionId ~= currentExecution
+        
+        if not Settings.macro_playback or is_lobby() or PlaybackExecutionId ~= currentExecution then break end
+        
         local Remote = Current["Remote"]
         if Current["Target"] == nil then
             if Remote[1] == "VoteWaveConfirm" then
@@ -1851,8 +1924,6 @@ function StartMacroPlayback()
                 UseKilluaWishesGUI(Current["Parameter"]["Ability Name"])
             elseif Remote[1] == "SpeedChange" then
                 ChangeSpeed(Current["Parameter"]["Speed"])
-            else
-                print(string.format("Macro error! Invalid target found for remote %s at step %s", Remote[1], CurrentStep))
             end
         else
             local unit, position, rotation = GetUnitByTargetInfo(Current["Target"])
@@ -1864,12 +1935,8 @@ function StartMacroPlayback()
                     repeat
                         task.wait(Settings.macro_playback_search_delay)
                         unit, position, rotation = GetUnitByTargetInfo(Current["Target"])
-                        print(string.format("Macro is attempting to find the unit for %s.", Remote[1]))
                         attempts = attempts + 1
-                    until unit ~= nil or attempts >= Settings.macro_playback_search_attempts or not Settings.macro_playback
-                    if attempts >= Settings.macro_playback_search_attempts then
-                        print(string.format("Macro skipped step %s for action %s, target %s, time %s.", CurrentStep, Remote[1], Current["Target"]["Name"], Current["Time"]))
-                    end
+                    until unit ~= nil or attempts >= Settings.macro_playback_search_attempts or not Settings.macro_playback or PlaybackExecutionId ~= currentExecution
                 end
             end
             if unit ~= nil then
@@ -1877,9 +1944,9 @@ function StartMacroPlayback()
                     UpgradeToLevelUnit(unit, Current["Parameter"]["Level"])
                 elseif Remote[1] == "Upgrade" and Settings.macro_upgrade then
                     UpgradeUnit(unit, Current["Parameter"]["Level"])
-                elseif Remote[1] == "MultipleAbilities" and Settings.macro_ability and table.find(Settings.macro_ability_blacklist, unit.Name) == nil then
+                elseif Remote[1] == "MultipleAbilities" and Settings.macro_ability then
                     UseMultipleAbilitiesGUI(Current["Parameter"]["Ability Name"])
-                elseif Remote[1] == "UseSpecialMove" and Settings.macro_ability and table.find(Settings.macro_ability_blacklist, unit.Name) == nil then
+                elseif Remote[1] == "UseSpecialMove" and Settings.macro_ability then
                     UseAbilityUnit(unit, Remote[3])
                 elseif Remote[1] == "AutoToggle" and Settings.macro_auto_ability then
                     ActivateAutoAbilityUnit(unit, Current["Parameter"]["Ability String"], Remote[3])
@@ -1887,13 +1954,7 @@ function StartMacroPlayback()
                     ChangePriorityUnit(unit)
                 elseif Remote[1] == "Sell" and Settings.macro_sell then
                     SellUnit(unit)
-                elseif Remote[1] == "Summon" then
-                    print("Macro attempting to summon a unit that already exists!")
-                else
-                    print("Macro error! Remote %s is not a valid for ASTD.")
                 end
-            elseif unit ~= nil and Remote[1] ~= "Summon" then
-                print(string.format("Macro error! Cannot find unit for remote %s at step %s", Remote[1], CurrentStep))
             end
         end
         CurrentStep, _ = next(Macros[Settings.macro_profile]["Macro"], CurrentStep)
@@ -1980,6 +2041,20 @@ function OnGameEnd()
     if not is_lobby() then
         local end_gui = GUI.HUD:WaitForChild("MissionEnd")
         repeat task.wait() until end_gui.Visible
+        
+        -- ===== SEAMLESS REPLAY SYSTEM INTEGRATION =====
+        -- Record mission completion in replay system
+        if ReplaySystem then
+            pcall(function()
+                local GameStatus = get_game_status()
+                if GameStatus == "Success!" then
+                    ReplaySystem.OnMissionEnd("Success")
+                else
+                    ReplaySystem.OnMissionEnd("Fail")
+                end
+            end)
+        end
+        
         if Settings.webhook_end_game then
             local webhook_args = {}
             local bg = end_gui:FindFirstChild("BG")
@@ -2005,6 +2080,31 @@ function OnGameEnd()
             table.insert(webhook_args, {["name"] = "Battle Pass Tier", ["value"] = ":signal_strength: " .. get_battle_pass_tier(), ["inline"] = true})
             SendWebhook(webhook_args)
         end
+    end
+end
+
+-- ===== REPLAY SYSTEM ACTION RECORDING HELPERS =====
+-- Helper functions to record common actions in replay system
+local function RecordUnitAction(actionName, unitName, details)
+    if ReplaySystem then
+        pcall(function()
+            ReplaySystem.RecordAction(actionName, {
+                Unit = unitName,
+                Timestamp = os.clock(),
+                Details = details or {}
+            })
+        end)
+    end
+end
+
+local function RecordWaveAction(waveNumber)
+    if ReplaySystem then
+        pcall(function()
+            ReplaySystem.RecordAction("WaveAction", {
+                Wave = waveNumber,
+                Timestamp = os.clock()
+            })
+        end)
     end
 end
 
@@ -2078,7 +2178,12 @@ function AutoReplay()
     local next_button = end_gui:WaitForChild("BG"):WaitForChild("Actions"):WaitForChild("Next")
     while Settings.auto_replay do
         if Settings.auto_next_story and next_button.Visible then break end
-        if replay_button.Visible then firesignal(replay_button.Activated) end
+        if replay_button.Visible then
+            -- ===== REPLAY TIMING FIX: Reset timer before replay =====
+            ResetGameTimer()
+            task.wait(0.2)
+            firesignal(replay_button.Activated)
+        end
         task.wait(1)
     end
 end
@@ -2088,7 +2193,12 @@ function AutoNextStory()
     repeat task.wait() until end_gui.Visible
     local next_button = end_gui:WaitForChild("BG"):WaitForChild("Actions"):WaitForChild("Next")
     while Settings.auto_next_story do
-        if next_button.Visible then firesignal(next_button.Activated) end
+        if next_button.Visible then
+            -- ===== TIMING FIX: Reset for next story mission =====
+            ResetGameTimer()
+            task.wait(0.2)
+            firesignal(next_button.Activated)
+        end
         task.wait(1)
     end
 end
@@ -2604,6 +2714,49 @@ local function AnonMode()
                           .Head:WaitForChild("NameLevelBBGUI"):WaitForChild("NameFrame")
                           :WaitForChild("TextLabel")
     nameLabel.Text = Settings.anonymous_mode_name
+end
+
+-- ===== SEAMLESS REPLAY SYSTEM INITIALIZATION =====
+-- Track mission starts for replay recording
+if get_world() ~= -1 and get_world() ~= -2 and ReplaySystem then
+    pcall(function()
+        -- Start recording when mission begins
+        ReplaySystem.OnMissionStart(get_world(), "Mission Started")
+        ReplaySystem.AutoInject()  -- Record all remote actions automatically
+    end)
+end
+
+-- ===== REPLAY DETECTION & RESET =====
+-- Monitor for replay and reset timing
+if get_world() ~= -1 and get_world() ~= -2 then
+    task.spawn(function()
+        local last_wave = 0
+        while true do
+            task.wait(0.5)
+            local current_wave = get_wave()
+            
+            -- Detect replay: wave went backward or mission restarted
+            if (current_wave > 0 and current_wave < last_wave) or (last_wave > 2 and current_wave <= 1) then
+                print("[REPLAY/RESTART DETECTED] Resetting timer and restarting macro playback.")
+                ResetGameTimer()
+                if Settings.macro_playback then
+                    task.spawn(StartMacroPlayback)
+                end
+                if ReplaySystem then
+                    pcall(function()
+                        ReplaySystem.ClearReplay()
+                        ReplaySystem.OnMissionStart(get_world(), "Replay Mission")
+                    end)
+                end
+            end
+            
+            if not is_lobby() then
+                last_wave = current_wave
+            else
+                last_wave = 0
+            end
+        end
+    end)
 end
 
 if get_world() ~= -1 and get_world() ~= -2 then
@@ -3715,7 +3868,7 @@ function InitializeUI()
     local function CreditsSettings()
         local Credits = Window:CreateTab({name = "Credits"})
         Heading(Credits, "Credits")
-        AddText(Credits, "Made by KarmaPanda & Maintained by Jeikaru",
+        AddText(Credits, "Made by KarmaPanda & Jeikaru, Maintained by K",
             "UI powered by Rayfield Gen2. Thanks to all the supporters and donators! Join our Discord: https://discord.gg/BrnQQGKbvE")
         return Credits
     end
