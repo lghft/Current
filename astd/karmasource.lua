@@ -1,21 +1,6 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.GameId ~= 1720936166 then return end
 print("hi work pls")
-
--- ============================================
--- SEAMLESS REPLAY SYSTEM INTEGRATION
--- ============================================
--- This script now includes automatic replay recording
--- Features:
---   • Automatic action logging
---   • Mission tracking
---   • Intelligent retry system
---   • Replay data export
--- 
--- Replay system is initialized automatically and 
--- tracks all mission activity without additional configuration
--- ============================================
--- Share one running instance across repeated executions in this session.
 local sessionEnvironment = (getgenv and getgenv()) or shared
 local sessionKey = "KarmaPandaASTD_RayfieldSession"
 local previousSession = sessionEnvironment[sessionKey]
@@ -27,7 +12,6 @@ if previousSession then
     return
 end
 
--- Reserve before any downloads/yields so simultaneous executions cannot race.
 local currentSession = {Loading = true}
 sessionEnvironment[sessionKey] = currentSession
 local started, startupError = xpcall(function()
@@ -162,10 +146,7 @@ local Window = Rayfield:CreateWindow({
     showName = "KarmaPanda",
 })
 currentSession.Window = Window
-
--- Startup automation already runs before InitializeUI, so callbacks are ignored
--- until the UI has finished building. That way restoring toggle/dropdown state
--- can never start duplicate loops or overwrite Settings.
+        
 local UIReady = false
 local function Guard(callback)
     return function(...)
@@ -3808,10 +3789,6 @@ function InitializeUI()
         AddToggle(Webhook, "Send webhook on game end", "webhook_end_game")
         AddToggle(Webhook, "Send webhook after exp evolve", "webhook_exp_evolve")
     end
-
-    ---------------------------------------------------------------------
-    -- Miscellaneous
-    ---------------------------------------------------------------------
     local function MiscellaneousSettings()
         local Miscellaneous = Window:CreateTab({name = "Miscellaneous"})
 
