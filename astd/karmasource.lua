@@ -277,7 +277,8 @@ local DefaultSettings = {
         ["Brook6"] = {["Mode"] = "Box", ["Checks"] = {"attack", "range"}, ["Ability Type"] = "Normal", ["Time"] = 13},
         ["Kisuke6"] = {["Mode"] = "Pair", ["Checks"] = {"attack", "range"}, ["Ability Type"] = "Multiple", ["Ability Name"] = "Buff Ability", ["Time"] = 13},
         ["Rayleigh"] = {["Mode"] = "Box", ["Checks"] = {"attack"}, ["Ability Type"] = "Normal", ["Time"] = 13},
-        ["Homura7"] = {["Mode"] = "Cycle", ["Checks"] = {}, ["Ability Type"] = "Normal", ["Cycle Units"] = 4, ["Time"] = 10, ["Delay"] = 1},
+        --["Homura7"] = {["Mode"] = "Cycle", ["Checks"] = {}, ["Ability Type"] = "Normal", ["Cycle Units"] = 4, ["Time"] = 10, ["Delay"] = 1},
+        ["Homura7"] = {["Mode"] = "Cycle", ["Checks"] = {}, ["Ability Type"] = "Multiple", ["Ability Name"] = "Time-Freezing Sands II", ["Cycle Units"] = 4, ["Time"] = 10, ["Delay"] = 1},
         ["Merlin6"] = {["Time"] = 13, ["Checks"] = {"attack", "range"}, ["Mode"] = "Box", ["Ability Type"] = "Normal"},
         ["Gojo7"] = {["Time"] = 9.5, ["Checks"] = {""}, ["Mode"] = "Box", ["Delay"] = 0, ["Ability Type"] = "Normal"},
         ["Metal Cooler"] = {["Time"] = 21, ["Checks"] = {""}, ["Mode"] = "Spam", ["Delay"] = 0.5, ["Ability Type"] = "Normal"},
@@ -307,7 +308,7 @@ local DefaultSettings = {
     macro_speedchange = true,
     macro_ability_blacklist = {
         "Erwin", "Merlin", "Brook6", "Kisuke6", "Rayleigh", "Merlin6", "Gojo7",
-        "Hoshino", "Metal Cooler","Welkin","Homura7", "μ's"
+        "Hoshino", "Metal Cooler","Welkin", "μ's"
     },
     macro_timer_version = "Version 2",
     action_queue_remote_fire_delay = 0.25,
@@ -746,7 +747,7 @@ local function CheckRangeBuff(Units)
         local buffs = v:FindFirstChild("Head"):FindFirstChild("EffectBBGUI")
         if buffs ~= nil then
             local range_buff = buffs:FindFirstChild("Frame"):FindFirstChild("RangeImage")
-            if not range_buff.Visible then return false end
+            if not range_Visible then return false end
         else
             return false
         end
@@ -778,6 +779,7 @@ end
 local StartTime = 30
 local TimeOffset = 0
 local PlaybackExecutionId = 0
+local AutoAbilityRecordedAbilities = {}
 
 local function ElapsedTime()
     local wave = get_wave()
@@ -1112,9 +1114,22 @@ local function UseMultipleAbilitiesUnit(unit, ability_string, ability_name)
     UseMultipleAbilitiesGUI(ability_name)
 end
 
-local function ActivateAutoAbilityUnit(unit, ability_string, toggled)
-    AddToQueue(game:GetService("ReplicatedStorage").Remotes.Input,
-               {[1] = "AutoToggle", [2] = unit, [3] = toggled})
+local function ActivateAutoAbilityUnit(unit, ability_string, toggled, ability_name)
+    if ability_name and ability_name ~= "" then
+        -- Multi-ability unit format
+        AddToQueue(game:GetService("ReplicatedStorage").Remotes.Input, {
+            [1] = "SetAbilityAuto",
+            [2] = {
+                ["State"] = toggled,
+                ["Ability"] = ability_name,
+                ["Unit"] = unit
+            }
+        })
+    else
+        -- Standard / Normal unit format
+        AddToQueue(game:GetService("ReplicatedStorage").Remotes.Input,
+                   {[1] = "AutoToggle", [2] = unit, [3] = toggled})
+    end
     UseAbilityUnit(unit, ability_string)
 end
 
@@ -1249,10 +1264,23 @@ local function HookAbility(unit, index)
         end
         return ability_2.ChildAdded:Connect(function(c)
             local status, err = pcall(function()
-                if special_move:GetAttribute("Auto") then return end
                 if Settings.macro_record and Settings.macro_ability and
                     table.find(Settings.macro_ability_blacklist, unit.Name) == nil then
+                    
+                    -- Use ability_string to isolate this exact ability
+                    local abilityKey = unit.Name .. "_" .. tostring(index) .. "_" .. tostring(ability_string)
+                    
+                    if AutoAbilityRecordedAbilities[abilityKey] ~= nil then
+                        if AutoAbilityRecordedAbilities[abilityKey] >= 1 then
+                            return -- Skip recording this specific ability further, but leave other abilities open!
+                        end
+                    end
+
                     if c.Name == "SpecialStart" then
+                        if AutoAbilityRecordedAbilities[abilityKey] ~= nil then
+                            AutoAbilityRecordedAbilities[abilityKey] = AutoAbilityRecordedAbilities[abilityKey] + 1
+                        end
+
                         InsertToMacro({
                             ["Time"] = MacroRecordElapsedTime(),
                             ["Target"] = {["Name"] = unit.Name, ["Index"] = index},
@@ -1278,11 +1306,12 @@ local function HookAutoAbility(unit, index)
         end
         return special_move:GetAttributeChangedSignal("Auto"):Connect(function()
             if Settings.macro_record and Settings.macro_auto_ability then
+                local currentAutoAbility = special_move:GetAttribute("SelectedAbility") or ability_string
                 InsertToMacro({
                     ["Time"] = MacroRecordElapsedTime(),
                     ["Target"] = {["Name"] = unit.Name, ["Index"] = index},
                     ["Remote"] = {[1] = "AutoToggle", [2] = "Target", [3] = special_move:GetAttribute("Auto")},
-                    ["Parameter"] = {["Ability String"] = ability_string}
+                    ["Parameter"] = {["Ability String"] = ability_string, ["Ability Name"] = currentAutoAbility, ["Status"] = special_move:GetAttribute("Auto")}
                 })
             end
         end)
@@ -1796,6 +1825,7 @@ function StartMacroRecord()
     if Macros[Settings.macro_profile]["Map"] == nil then Macros[Settings.macro_profile]["Map"] = {} end
     if Macros[Settings.macro_profile]["Units"] == nil then Macros[Settings.macro_profile]["Units"] = {} end
     if is_lobby() then return end
+    AutoAbilityRecordedAbilities = {}
     MacroLoadout.Capture(Macros[Settings.macro_profile])
     local Units = game:GetService("Workspace"):WaitForChild("Unit")
     for _, unit in pairs(get_units()) do AddHooks(unit, GetUnitIndex(unit)) end
@@ -2349,22 +2379,27 @@ end
 function BuffEngine.Send(unit, group, name, config, valid)
     if not valid() or not BuffEngine.Ready(unit, group, name, config) then return false end
     local input = game.ReplicatedStorage.Remotes.Input
-    -- Preserve the main source's default activation argument.
-    -- Special Move Name is only a filter; it is never sent as this argument.
     local argument = ""
+    
+    -- If it's a standard single-ability unit, fire normally
     if config["Ability Type"] ~= "Multiple" then
         input:FireServer("UseSpecialMove", unit, argument)
         return true
     end
+    
+    -- Prevent overlapping multi-menu triggers
     if BuffEngine.MultipleBusy then return false end
+    
     local menu = GUI:FindFirstChild("MultipleAbilities")
-    -- Another unit's menu is open and doesn't contain our option; don't pick from it.
     if menu and not FindAbilityButton(menu, config["Ability Name"]) and menu.Enabled then
         return false
     end
+    
     BuffEngine.MultipleBusy = true
     local success, sent = pcall(function()
+        -- Open the ability selection menu for this unit
         input:FireServer("UseSpecialMove", unit, argument)
+        
         local deadline = os.clock() + 4
         repeat
             if not valid() or unit.Parent == nil then return false end
@@ -2372,6 +2407,7 @@ function BuffEngine.Send(unit, group, name, config, valid)
             if current then
                 local button = FindAbilityButton(current, config["Ability Name"])
                 if button and valid() and unit.Parent ~= nil then
+                    -- Trigger the exact multi-ability button found in the menu
                     firesignal(button.Activated)
                     return true
                 end
@@ -2380,8 +2416,11 @@ function BuffEngine.Send(unit, group, name, config, valid)
         until os.clock() >= deadline
         return false
     end)
+    
     BuffEngine.MultipleBusy = false
-    if not success then warn("[Auto Buff] Multiple ability: " .. tostring(sent)) end
+    if not success then 
+        warn("[Auto Buff] Multiple ability error: " .. tostring(sent)) 
+    end
     return success and sent
 end
 
