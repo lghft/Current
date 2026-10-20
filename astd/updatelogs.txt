@@ -1,17 +1,18 @@
 Key:UpdateV4.3
 
 Update V4.3
-Added Seamless Replay Support?
+Added Seamless Replay Support
 Added Upgrade To Level to Macro Record/Playback
+Fixed Homura/Multi Cycle units (like Jotaro) ?
 
 Update V4.2
 
 Small Changes:
+Changed Ui Library (Old one is Gone)
 
 Added Start after time:0 steps (better to use auto start though)
 Fixed Multiple Abilities in Macro Playback
 Fixed Lobby System (Also Set Ingame Auto Match Choice to Play Here)
 Fixed Advanced Settings
-
 
 report bugs at nil
