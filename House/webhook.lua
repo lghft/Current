@@ -335,7 +335,7 @@ local function sendWebhook(snapshot, info)
         return
     end
 
-    local targetItems = { "Coins", "VoodooToken", "GardenCoins", "RaidTokens", "KingsToken" }
+    local targetItems = { "Coins", "VoodooToken", "GardenCoins", "RaidTokens", "Candy", "Bolts" }
 
     local foundItems = {}
     if endingInventory then
