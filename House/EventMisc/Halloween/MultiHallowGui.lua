@@ -95,6 +95,15 @@ local function readSetting(key, default)
     return default
 end
 
+-- Returns the saved integer for a key if it's in range, or the default
+local function readSettingNumber(key, default, max)
+    local v = savedSettings[key]
+    if type(v) == "number" and v >= 1 and v <= max and v % 1 == 0 then
+        return v
+    end
+    return default
+end
+
 -- =========================
 -- Decision settings
 -- =========================
@@ -105,8 +114,8 @@ local UNKNOWN_TIMEOUT = 15      -- Seconds a system can stay "unknown" before it
 local lastWorldBossFire = 0
 local autoWorldBossEnabled = true   -- Auto WorldBoss toggle: gates the world boss remote and its loadstring
 
--- Auto Storm Boss: same as World Boss, but uses its own loadstring and a lobby script instead of the remote
-local STORMBOSS_LOADSTRING_URL = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoStormBoss.lua"
+-- Auto Clock Tower: runs a lobby script (one-shot per visit) and a loadstring (once per session).
+-- The lobby script's map is set from the selected option's doorKey (3 = StormEngine, 4 = HolyLab).
 local STORMBOSS_LOBBY_SCRIPT = [==[
 -- Lobby Automation Script for LabRooms (with failsafes)
 local env = (getgenv and getgenv()) or _G
@@ -135,7 +144,7 @@ local player = Players.LocalPlayer
 
 -- SETTINGS
 local LOBBY_POSITION = Vector3.new(3000, 91, 6062)
-local SELECTED_MAP_NUMBER = 3     -- Select a map: 1-5
+local SELECTED_MAP_NUMBER = env.CANDY_CLOCKTOWER_MAP or 3     -- Set by Candy Loop from the Clock Tower mode
 local MAX_ATTEMPTS = 3            -- Full run retries before giving up
 local RETRY_DELAY = 5             -- Seconds between attempts
 local STEP_TIMEOUT = 15           -- Max seconds to wait on one step (teleport, character, etc.)
@@ -407,10 +416,31 @@ end
 
 task.spawn(main)
 ]==]
-local stormLobbyRanThisVisit = false  -- Storm lobby script runs once per lobby visit
+local clockLobbyRanThisVisit = false  -- Clock Tower lobby script runs once per lobby visit
 local lobbyArrivedAt = nil            -- When the player arrived in the lobby (used for the settle delay)
-local LOBBY_SETTLE_TIME = 15          -- Seconds to let Trick or Treat doors load before Storm runs
-local autoStormBossEnabled = true
+local LOBBY_SETTLE_TIME = 15          -- Seconds to let Trick or Treat doors load before the Clock Tower script runs
+local autoClockTowerEnabled = true
+
+-- Clock Tower options. The mode button cycles between them.
+-- doorKey is the map number the lobby script selects (3 = StormEngine, 4 = HolyLab)
+local CLOCK_TOWER_OPTIONS = {
+    {
+        label = "Storm Engine",
+        doorKey = 3,
+        loadstringUrl = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua",
+        flagKey = "CANDY_CLOCK_STORM_RAN",
+    },
+    {
+        label = "Holy Lab",
+        doorKey = 4,
+        loadstringUrl = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoHolyFrank.lua",
+        flagKey = "CANDY_CLOCK_HOLY_RAN",
+    },
+}
+local clockTowerIndex = 1   -- 1 = Storm Engine, 2 = Holy Lab
+local function currentClockTower()
+    return CLOCK_TOWER_OPTIONS[clockTowerIndex]
+end
 
 -- =========================
 -- Candy feed
@@ -583,7 +613,7 @@ end
 
 -- Moves the player with the game's own remotes.
 -- "halloween" sends them to the Halloween lobby for Trick or Treat.
--- "clocktower" sends them to the ClockTower for the Storm lobby.
+-- "clocktower" sends them to the ClockTower for the Clock Tower lobby.
 local function teleportViaRemotes(destination)
     local ok, err = pcall(function()
         local remotes = ReplicatedStorage.Modules.Remotes
@@ -601,7 +631,7 @@ local function teleportViaRemotes(destination)
     return ok
 end
 
--- Throttles the ClockTower trip so the Storm branch doesn't re-fire it every loop
+-- Throttles the ClockTower trip so the Clock Tower branch doesn't re-fire it every loop
 local lastStormTravel = 0
 
 -- Fires the world boss enter remote, throttled so it isn't spammed
@@ -616,21 +646,27 @@ local function tryWorldBossEnter()
     end
 end
 
--- Runs the Storm Boss lobby script once per lobby visit. The flag resets when you leave the lobby.
-local function tryStormBossLobby()
-    if stormLobbyRanThisVisit then return end
+-- Runs the Clock Tower lobby script once per lobby visit, with the selected door as the map.
+-- The flag resets when you leave the lobby.
+local function tryClockTowerLobby()
+    if clockLobbyRanThisVisit then return end
 
+    local option = currentClockTower()
+    if not option then return end
     if STORMBOSS_LOBBY_SCRIPT == "" then
-        warn("[Candy Loop] Storm Boss lobby script is empty")
+        warn("[Candy Loop] Clock Tower lobby script is empty")
         return
     end
 
-    stormLobbyRanThisVisit = true
+    clockLobbyRanThisVisit = true
+    local env = (getgenv and getgenv()) or _G
+    env.CANDY_CLOCKTOWER_MAP = option.doorKey
+
     local ok, err = pcall(function()
         loadstring(STORMBOSS_LOBBY_SCRIPT)()
     end)
     if not ok then
-        warn("[Candy Loop] Storm Boss lobby script failed: " .. tostring(err))
+        warn("[Candy Loop] Clock Tower lobby script failed: " .. tostring(err))
     end
 end
 
@@ -1307,20 +1343,26 @@ local function runGraveRoute()
 end
 
 -- =========================
--- Trick or Treat auto (pathfinding)
+-- Trick or Treat auto (pathfinding or direct teleport)
 -- =========================
 local TRICK_CONFIG = {
     ENABLED = true,           -- Starts ON
     ROUTE_COOLDOWN = 2,
-    START_POS = Vector3.new(833, 383, 215),  -- Teleported to once at the start of each trick route
+    START_POS = Vector3.new(833, 383, 215),  -- Teleported to once at the start of each trick route (streams the doors in)
     KNOCK_GAP = 2,            -- Pause after each knock so the outcome can play out
+    KNOCK_ATTEMPTS = 3,       -- Times the prompt is fired on one door before giving up on it
     APPROACH_DIST = 2.5,      -- How far in front of the door to stand
     PATH_RETRIES = 3,         -- Recompute the path this many times before giving up on a door
     WAYPOINT_TIMEOUT = 4,     -- Max seconds to reach one waypoint before treating it as blocked
-    RESULT_TIMEOUT = 6,       -- Max seconds to wait for the door text to change after a knock
+    RESULT_TIMEOUT = 6,       -- Max seconds to wait for the door text to change after each fire
     READY_TEXT = "trick or treat",
     DEBUG = true,             -- Prints path status and door info to the console
 }
+
+-- Pathfinding walks with the teleport safeguard. Teleport jumps straight to the door.
+local TRICK_MODES = { "Pathfinding", "Teleport" }
+local trickModeIndex = 1
+local trickState = { stalledUntil = 0 }
 
 local function trickLog(...)
     if TRICK_CONFIG.DEBUG then
@@ -1365,6 +1407,35 @@ local function getReadyDoors()
     return list
 end
 
+-- Reads today's Trick or Treat data from the module. This works even when the doors are
+-- far away and not streamed in. Returns readyCount, totalCount, or nil if the data isn't available.
+local function getTrickDayCounts()
+    local okMod, TrickMod = pcall(function()
+        return require(ReplicatedStorage.Modules.TrickOrTreat)
+    end)
+    local okDoors, doors = pcall(function()
+        return require(ReplicatedStorage.Modules.TownGhosts.Config).DOORS
+    end)
+    if not okMod or not okDoors or type(doors) ~= "table" then return nil end
+
+    local okData, data = pcall(function()
+        return TrickMod.atom()
+    end)
+    if not okData or type(data) ~= "table" then return nil end
+
+    local total, knocked = 0, 0
+    for i, door in pairs(doors) do
+        if not door.gone then
+            total = total + 1
+            local okVisited, visited = pcall(TrickMod.visited, data, i)
+            if okVisited and visited then
+                knocked = knocked + 1
+            end
+        end
+    end
+    return total - knocked, total
+end
+
 -- Horizontal distance, so height differences don't affect arrival checks
 local function flatDist(a, b)
     local dx = a.X - b.X
@@ -1383,6 +1454,16 @@ local function waitNear(root, pos, radius, timeout, isEnabled)
         task.wait(0.1)
     end
     return false
+end
+
+-- Waits until at least one ready door is streamed in, or times out
+local function waitForTrickDoors(timeout)
+    local deadline = os.clock() + timeout
+    while TRICK_CONFIG.ENABLED and os.clock() < deadline do
+        if #getReadyDoors() > 0 then return true end
+        task.wait(0.25)
+    end
+    return #getReadyDoors() > 0
 end
 
 -- Walks to endPos using PathfindingService so the character goes around walls.
@@ -1442,7 +1523,42 @@ local function followPath(endPos)
     return false
 end
 
--- Walks to a door and presses its Knock prompt. Returns true if the door text changed.
+-- Moves the character to target by the selected trick mode.
+-- Pathfinding walks, and falls back to a direct teleport if pathing fails. Teleport always jumps.
+local function moveToDoor(target)
+    if TRICK_MODES[trickModeIndex] == "Teleport" then
+        trickLog("teleport mode: jumping to door front")
+        teleportTo(target)
+        task.wait(0.3)
+        return true
+    end
+
+    if followPath(target) then
+        return true
+    end
+
+    trickLog("no path to door - using direct teleport")
+    teleportTo(target)
+    task.wait(0.5)
+    return false
+end
+
+-- Makes sure the character is inside the prompt's activation distance before firing it.
+-- Without this, a prompt can be fired from too far away and do nothing.
+local function ensureInPromptRange(prompt, doorPos, target)
+    local maxDist = prompt.MaxActivationDistance
+    if not maxDist or maxDist <= 0 then maxDist = 10 end
+
+    local root = getRoot()
+    if root and flatDist(root.Position, doorPos) > maxDist - 1 then
+        trickLog("out of prompt range, moving closer")
+        teleportTo(target)
+        task.wait(0.3)
+    end
+end
+
+-- Walks (or teleports) to a door and fires its Knock prompt until the text changes.
+-- Returns true once the door is knocked.
 local function knockDoor(door)
     local prompt = door:FindFirstChildWhichIsA("ProximityPrompt", true)
     local root = getRoot()
@@ -1452,44 +1568,68 @@ local function knockDoor(door)
         return false
     end
 
-    -- Stand in front of the door, at ground level
-    local front = doorCF.Position + doorCF.LookVector * TRICK_CONFIG.APPROACH_DIST
+    -- Stand in front of the door, at the player's current height
+    local doorPos = doorCF.Position
+    local front = doorPos + doorCF.LookVector * TRICK_CONFIG.APPROACH_DIST
     local target = Vector3.new(front.X, root.Position.Y, front.Z)
 
     if statusLabel then
-        statusLabel.Text = "Status: Trick or Treat - Approaching door at (" .. round(doorCF.Position.X) .. ", " .. round(doorCF.Position.Z) .. ")"
+        statusLabel.Text = "Status: Trick or Treat - Approaching door at (" .. round(doorPos.X) .. ", " .. round(doorPos.Z) .. ")"
         statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
     end
 
-    if not followPath(target) then
-        trickLog("no path to door at", doorCF.Position, "- using direct move")
-
-        -- Pathfinding failed (no route, or stuck on a roof), so move directly
-        local r = getRoot()
-        if r then
-            r.CFrame = CFrame.new(target)
-            task.wait(0.5)
-        end
-    end
+    moveToDoor(target)
 
     if not TRICK_CONFIG.ENABLED then return false end
 
+    ensureInPromptRange(prompt, doorPos, target)
+
     if statusLabel then
-        statusLabel.Text = "Status: Trick or Treat - Knocking door at (" .. round(doorCF.Position.X) .. ", " .. round(doorCF.Position.Z) .. ")"
+        statusLabel.Text = "Status: Trick or Treat - Knocking door at (" .. round(doorPos.X) .. ", " .. round(doorPos.Z) .. ")"
         statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
     end
 
-    trickLog("firing prompt on door at", doorCF.Position)
-    fireproximityprompt(prompt)
+    for attempt = 1, TRICK_CONFIG.KNOCK_ATTEMPTS do
+        if not TRICK_CONFIG.ENABLED then return false end
+        if not isReadyText(prompt.ObjectText) then
+            trickLog("door already changed before firing")
+            return true
+        end
 
-    local deadline = os.clock() + TRICK_CONFIG.RESULT_TIMEOUT
-    while TRICK_CONFIG.ENABLED and os.clock() < deadline and isReadyText(prompt.ObjectText) do
-        task.wait(0.2)
+        -- A disabled prompt won't respond, so give it a moment to re-enable
+        if not prompt.Enabled then
+            task.wait(0.3)
+        end
+
+        trickLog("firing prompt, attempt " .. attempt, "at", doorPos)
+        local okFire, errFire = pcall(fireproximityprompt, prompt)
+        if not okFire then
+            trickLog("fireproximityprompt error: " .. tostring(errFire))
+        end
+
+        local deadline = os.clock() + TRICK_CONFIG.RESULT_TIMEOUT
+        while TRICK_CONFIG.ENABLED and os.clock() < deadline and isReadyText(prompt.ObjectText) do
+            task.wait(0.2)
+        end
+
+        if not isReadyText(prompt.ObjectText) then
+            trickLog("knock succeeded on attempt " .. attempt)
+            return true
+        end
+
+        -- Still ready: re-approach and try again
+        ensureInPromptRange(prompt, doorPos, target)
+        task.wait(0.3)
     end
 
-    local changed = not isReadyText(prompt.ObjectText)
-    trickLog("knock result changed=" .. tostring(changed))
-    return changed
+    trickLog("knock failed after " .. TRICK_CONFIG.KNOCK_ATTEMPTS .. " attempts")
+    return false
+end
+
+local function countKeys(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
 end
 
 -- Teleports to the trick or treat start point, then knocks every ready door, nearest first,
@@ -1499,12 +1639,31 @@ local function runTrickRoute()
     game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
     task.wait(0.3)
 
+    -- Wait for the doors to stream in around the start point
+    if not waitForTrickDoors(6) then
+        trickLog("no ready doors streamed in after teleport, pausing trick route")
+        trickState.stalledUntil = os.clock() + 60
+        return
+    end
+
     local failed = {}
+    local knockedCount = 0
     local humanoid = getHumanoid()
     local originalSpeed = humanoid and humanoid.WalkSpeed or 16
 
     if humanoid then
         humanoid.WalkSpeed = 43
+    end
+
+    local function finish()
+        local h = getHumanoid()
+        if h then
+            h.WalkSpeed = originalSpeed
+        end
+        -- Doors were ready but none could be knocked: pause so the route doesn't retry every loop
+        if knockedCount == 0 and countKeys(failed) > 0 then
+            trickState.stalledUntil = os.clock() + 30
+        end
     end
 
     local lastPos = getRoot() and getRoot().Position or Vector3.new(0, 0, 0)
@@ -1513,9 +1672,7 @@ local function runTrickRoute()
     while TRICK_CONFIG.ENABLED do
         local root = getRoot()
         if not root then
-            if humanoid then
-                humanoid.WalkSpeed = originalSpeed
-            end
+            finish()
             return
         end
 
@@ -1555,32 +1712,27 @@ local function runTrickRoute()
         end
 
         if not best then
-            trickLog("no ready doors left (ready=" .. doorsCount .. ", failed=" .. #failed .. ")")
-            if humanoid then
-                humanoid.WalkSpeed = originalSpeed
-            end
+            trickLog("no ready doors left (ready=" .. doorsCount .. ", failed=" .. countKeys(failed) .. ")")
+            finish()
             return
         end
 
         local bestPos = getDoorPosition(best)
-        local doorX = round(bestPos.X)
-        local doorZ = round(bestPos.Z)
-        local distance = round(bestDist)
         if statusLabel then
-            statusLabel.Text = "Status: Going to door at (" .. doorX .. ", " .. doorZ .. ") - Distance: " .. distance .. "studs [" .. doorsCount .. " left]"
+            statusLabel.Text = "Status: Going to door at (" .. round(bestPos.X) .. ", " .. round(bestPos.Z) .. ") - Distance: " .. round(bestDist) .. "studs [" .. doorsCount .. " left]"
             statusLabel.TextColor3 = Color3.fromRGB(140, 255, 120)
         end
 
-        if not knockDoor(best) then
+        if knockDoor(best) then
+            knockedCount = knockedCount + 1
+        else
             failed[best] = true
         end
 
         task.wait(TRICK_CONFIG.KNOCK_GAP or 0)
     end
 
-    if humanoid then
-        humanoid.WalkSpeed = originalSpeed
-    end
+    finish()
 end
 
 -- =========================
@@ -1655,15 +1807,21 @@ local function graveStatus()
     return sawReady and "ready" or "notready"
 end
 
+-- Trick or Treat has work when a door is ready in the streamed-in workspace, or when the
+-- daily module data says doors are still unknocked (so it works from anywhere in the map)
 local function trickStatus()
     if not TRICK_CONFIG.ENABLED then return "notready" end
+    if os.clock() < trickState.stalledUntil then return "notready" end
     if #getReadyDoors() > 0 then return "ready" end
+
+    local ready = getTrickDayCounts()
+    if ready and ready > 0 then return "ready" end
     return "notready"
 end
 
--- Either boss toggle counts, so Storm Boss alone still lets the other 3 priorities run
+-- Either boss toggle counts, so Clock Tower alone still lets the other priorities run
 local function bossEnabled()
-    return autoWorldBossEnabled or autoStormBossEnabled
+    return autoWorldBossEnabled or autoClockTowerEnabled
 end
 
 -- The priority routes only run when Pumpkin, Graveyard, Trick or Treat, and a boss are all ON
@@ -1682,7 +1840,8 @@ local function unknownTimedOut(isBlocked)
     return os.clock() - unknownSince >= UNKNOWN_TIMEOUT
 end
 
--- Returns a state and the route name. Checks trick first so it's not blocked by unknown states.
+-- Returns a state and the route name. Priority is Pumpkin > Graveyard > Trick or Treat,
+-- so Trick or Treat runs after the digging finishes. Only the bosses come after it.
 local function decideRoute()
     if not priorityEnabled() then
         unknownTimedOut(false)
@@ -1693,11 +1852,9 @@ local function decideRoute()
     local grave = graveStatus()
     local trick = trickStatus()
 
-    -- Trick or Treat is checked first so it's never blocked by unknown states
-    if trick == "ready" then return "ready", "trick" end
-
     if pumpkin == "ready" then return "ready", "pumpkin" end
     if grave == "ready" then return "ready", "grave" end
+    if trick == "ready" then return "ready", "trick" end
 
     local blocked = pumpkin == "unknown" or grave == "unknown"
     if blocked and not unknownTimedOut(true) then
@@ -1733,7 +1890,7 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.new(0, 360, 0, 500)
+frame.Size = UDim2.new(0, 360, 0, 590)
 frame.Position = UDim2.new(0.05, 0, 0.1, 0)
 frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 0
@@ -1921,21 +2078,21 @@ local worldBossCorner = Instance.new("UICorner")
 worldBossCorner.CornerRadius = UDim.new(0, 8)
 worldBossCorner.Parent = worldBossButton
 
--- Auto Storm Boss toggle (starts ON)
-local stormBossButton = Instance.new("TextButton")
-stormBossButton.Name = "StormBossButton"
-stormBossButton.Size = UDim2.new(1, -20, 0, 36)
-stormBossButton.Position = UDim2.new(0, 10, 0, 318)
-stormBossButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-stormBossButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-stormBossButton.TextSize = 16
-stormBossButton.Font = Enum.Font.GothamBold
-stormBossButton.Text = "Auto Storm Boss: ON"
-stormBossButton.Parent = mainPage
+-- Auto Clock Tower toggle (starts ON)
+local clockTowerButton = Instance.new("TextButton")
+clockTowerButton.Name = "ClockTowerButton"
+clockTowerButton.Size = UDim2.new(1, -20, 0, 36)
+clockTowerButton.Position = UDim2.new(0, 10, 0, 318)
+clockTowerButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+clockTowerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+clockTowerButton.TextSize = 16
+clockTowerButton.Font = Enum.Font.GothamBold
+clockTowerButton.Text = "Auto Clock Tower: ON"
+clockTowerButton.Parent = mainPage
 
-local stormBossCorner = Instance.new("UICorner")
-stormBossCorner.CornerRadius = UDim.new(0, 8)
-stormBossCorner.Parent = stormBossButton
+local clockTowerCorner = Instance.new("UICorner")
+clockTowerCorner.CornerRadius = UDim.new(0, 8)
+clockTowerCorner.Parent = clockTowerButton
 
 -- Feed mode toggle (single or bulk candy toss)
 local feedModeButton = Instance.new("TextButton")
@@ -1953,10 +2110,42 @@ local feedModeCorner = Instance.new("UICorner")
 feedModeCorner.CornerRadius = UDim.new(0, 8)
 feedModeCorner.Parent = feedModeButton
 
+-- Clock Tower mode (cycles the door and loadstring used by the Clock Tower branch)
+local clockTowerModeButton = Instance.new("TextButton")
+clockTowerModeButton.Name = "ClockTowerModeButton"
+clockTowerModeButton.Size = UDim2.new(1, -20, 0, 36)
+clockTowerModeButton.Position = UDim2.new(0, 10, 0, 406)
+clockTowerModeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+clockTowerModeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+clockTowerModeButton.TextSize = 16
+clockTowerModeButton.Font = Enum.Font.GothamBold
+clockTowerModeButton.Text = "Clock Tower: Storm Engine"
+clockTowerModeButton.Parent = mainPage
+
+local clockTowerModeCorner = Instance.new("UICorner")
+clockTowerModeCorner.CornerRadius = UDim.new(0, 8)
+clockTowerModeCorner.Parent = clockTowerModeButton
+
+-- Trick mode (Pathfinding walks with the safeguard, Teleport jumps straight to the door)
+local trickModeButton = Instance.new("TextButton")
+trickModeButton.Name = "TrickModeButton"
+trickModeButton.Size = UDim2.new(1, -20, 0, 36)
+trickModeButton.Position = UDim2.new(0, 10, 0, 450)
+trickModeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+trickModeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+trickModeButton.TextSize = 16
+trickModeButton.Font = Enum.Font.GothamBold
+trickModeButton.Text = "Trick Mode: Pathfinding"
+trickModeButton.Parent = mainPage
+
+local trickModeCorner = Instance.new("UICorner")
+trickModeCorner.CornerRadius = UDim.new(0, 8)
+trickModeCorner.Parent = trickModeButton
+
 local priorityLabel = Instance.new("TextLabel")
 priorityLabel.Name = "PriorityNote"
-priorityLabel.Size = UDim2.new(1, -20, 0, 36)
-priorityLabel.Position = UDim2.new(0, 10, 0, 406)
+priorityLabel.Size = UDim2.new(1, -20, 0, 30)
+priorityLabel.Position = UDim2.new(0, 10, 0, 494)
 priorityLabel.BackgroundTransparency = 1
 priorityLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
 priorityLabel.TextSize = 12
@@ -2374,9 +2563,11 @@ local function saveToggleStates()
         pumpkin = PUMPKIN_CONFIG.ENABLED,
         graves = GRAVE_CONFIG.ENABLED,
         trick = TRICK_CONFIG.ENABLED,
+        trickModeIndex = trickModeIndex,
         esp = ESP_ENABLED,
         worldBoss = autoWorldBossEnabled,
-        stormBoss = autoStormBossEnabled,
+        clockTower = autoClockTowerEnabled,
+        clockTowerIndex = clockTowerIndex,
         feedBulk = autoFeedMode == 2,
     })
 end
@@ -2387,8 +2578,12 @@ looping = false
 PUMPKIN_CONFIG.ENABLED = readSetting("pumpkin", true)
 GRAVE_CONFIG.ENABLED = readSetting("graves", true)
 TRICK_CONFIG.ENABLED = readSetting("trick", true)
+trickModeIndex = readSettingNumber("trickModeIndex", 1, #TRICK_MODES)
+trickModeButton.Text = "Trick Mode: " .. TRICK_MODES[trickModeIndex]
 autoWorldBossEnabled = readSetting("worldBoss", true)
-autoStormBossEnabled = readSetting("stormBoss", true)
+autoClockTowerEnabled = readSetting("clockTower", readSetting("stormBoss", true))
+clockTowerIndex = readSettingNumber("clockTowerIndex", 1, #CLOCK_TOWER_OPTIONS)
+clockTowerModeButton.Text = "Clock Tower: " .. currentClockTower().label
 autoFeedMode = readSetting("feedBulk", false) and 2 or 1
 feedModeButton.Text = autoFeedMode == 2 and "Feed Mode: Bulk" or "Feed Mode: Single"
 setESP(readSetting("esp", true))
@@ -2399,7 +2594,7 @@ styleToggle(graveButton, "Graves", GRAVE_CONFIG.ENABLED)
 styleToggle(trickButton, "Trick or Treat", TRICK_CONFIG.ENABLED)
 styleToggle(espButton, "Door ESP", ESP_ENABLED)
 styleToggle(worldBossButton, "Auto WorldBoss", autoWorldBossEnabled)
-styleToggle(stormBossButton, "Auto Storm Boss", autoStormBossEnabled)
+styleToggle(clockTowerButton, "Auto Clock Tower", autoClockTowerEnabled)
 
 saveToggleStates()
 
@@ -2427,6 +2622,12 @@ table.insert(connections, trickButton.MouseButton1Click:Connect(function()
     saveToggleStates()
 end))
 
+table.insert(connections, trickModeButton.MouseButton1Click:Connect(function()
+    trickModeIndex = trickModeIndex % #TRICK_MODES + 1
+    trickModeButton.Text = "Trick Mode: " .. TRICK_MODES[trickModeIndex]
+    saveToggleStates()
+end))
+
 table.insert(connections, espButton.MouseButton1Click:Connect(function()
     setESP(not ESP_ENABLED)
     styleToggle(espButton, "Door ESP", ESP_ENABLED)
@@ -2439,9 +2640,16 @@ table.insert(connections, worldBossButton.MouseButton1Click:Connect(function()
     saveToggleStates()
 end))
 
-table.insert(connections, stormBossButton.MouseButton1Click:Connect(function()
-    autoStormBossEnabled = not autoStormBossEnabled
-    styleToggle(stormBossButton, "Auto Storm Boss", autoStormBossEnabled)
+table.insert(connections, clockTowerButton.MouseButton1Click:Connect(function()
+    autoClockTowerEnabled = not autoClockTowerEnabled
+    styleToggle(clockTowerButton, "Auto Clock Tower", autoClockTowerEnabled)
+    saveToggleStates()
+end))
+
+table.insert(connections, clockTowerModeButton.MouseButton1Click:Connect(function()
+    clockTowerIndex = clockTowerIndex % #CLOCK_TOWER_OPTIONS + 1
+    clockTowerModeButton.Text = "Clock Tower: " .. currentClockTower().label
+    clockLobbyRanThisVisit = false  -- let the lobby script run again with the new map
     saveToggleStates()
 end))
 
@@ -2540,39 +2748,14 @@ end
 -- A door counts as ready when it hasn't been knocked today.
 local function refreshTrickStats()
     local label = trickStatLabel
+    local ready, total = getTrickDayCounts()
 
-    local okMod, TrickMod = pcall(function()
-        return require(ReplicatedStorage.Modules.TrickOrTreat)
-    end)
-    local okDoors, doors = pcall(function()
-        return require(ReplicatedStorage.Modules.TownGhosts.Config).DOORS
-    end)
-    if not okMod or not okDoors or type(doors) ~= "table" then
+    if not ready then
         label.Text = "Unavailable"
         label.TextColor3 = Color3.fromRGB(170, 170, 170)
         return
     end
 
-    local okData, data = pcall(function()
-        return TrickMod.atom()
-    end)
-    if not okData or type(data) ~= "table" then
-        label.Text = "Unavailable"
-        label.TextColor3 = Color3.fromRGB(170, 170, 170)
-        return
-    end
-
-    local total, knocked = 0, 0
-    for i, door in pairs(doors) do
-        if not door.gone then
-            total = total + 1
-            if TrickMod.visited(data, i) then
-                knocked = knocked + 1
-            end
-        end
-    end
-
-    local ready = total - knocked
     if ready > 0 then
         label.Text = "Ready: " .. ready .. " of " .. total .. " doors"
         label.TextColor3 = Color3.fromRGB(140, 255, 120)
@@ -2607,9 +2790,9 @@ end)
 --   priority paused (any of Pumpkin, Graves, Trick, or both boss toggles OFF) -> no routes
 --   unknown                    -> wait (up to UNKNOWN_TIMEOUT, then treated as not ready)
 --   ready + outside lobby      -> teleport to lobby, then wait for the load
---   ready + inside lobby       -> run the highest-priority ready route
---   not ready + inside lobby   -> World Boss remote if ON, else Storm lobby script if ON (once per visit)
---   not ready + outside lobby  -> World Boss loadstring if ON, else Storm loadstring if ON (once per session)
+--   ready + inside lobby       -> run the highest-priority ready route (Pumpkin > Graves > Trick)
+--   not ready + inside lobby   -> World Boss remote if ON, else Clock Tower lobby script if ON (once per visit)
+--   not ready + outside lobby  -> World Boss loadstring if ON, else Clock Tower loadstring if ON (once per session)
 task.spawn(function()
     while running do
         -- Don't make any decision while the teleport screen is still up
@@ -2618,12 +2801,12 @@ task.spawn(function()
         local state, route = decideRoute()
         local atLobby = inLobby()
 
-        -- Track lobby arrival. Re-arm the Storm lobby script once we leave, so it runs again next visit
+        -- Track lobby arrival. Re-arm the Clock Tower lobby script once we leave, so it runs again next visit
         if atLobby then
             lobbyArrivedAt = lobbyArrivedAt or os.clock()
         else
             lobbyArrivedAt = nil
-            stormLobbyRanThisVisit = false
+            clockLobbyRanThisVisit = false
         end
 
         if state == "unknown" then
@@ -2641,22 +2824,22 @@ task.spawn(function()
                 teleportViaRemotes("halloween")
                 task.wait(10)
             else
-            goToLobby()
-            task.spawn(function()
-                local targetCode2 = "20187371346491136469671725312837"--htd
-                game:GetService("ExperienceService"):LaunchExperience({
-                    placeId = 131367064230486,
-                    linkCode = tostring(targetCode2)
-                })
-            end)
-            task.wait(10)
-            task.spawn(function()
-                local targetCode2 = "20187371346491136469671725312837"--htd
-                game:GetService("ExperienceService"):LaunchExperience({
-                    placeId = 131367064230486,
-                    linkCode = tostring(targetCode2)
-                })
-            end)
+                goToLobby()
+                task.spawn(function()
+                    local targetCode2 = "20187371346491136469671725312837"--htd
+                    game:GetService("ExperienceService"):LaunchExperience({
+                        placeId = 131367064230486,
+                        linkCode = tostring(targetCode2)
+                    })
+                end)
+                task.wait(10)
+                task.spawn(function()
+                    local targetCode2 = "20187371346491136469671725312837"--htd
+                    game:GetService("ExperienceService"):LaunchExperience({
+                        placeId = 131367064230486,
+                        linkCode = tostring(targetCode2)
+                    })
+                end)
             end
         elseif state == "ready" and atLobby then
             if statusLabel then
@@ -2671,8 +2854,9 @@ task.spawn(function()
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
                 tryWorldBossEnter()
-            elseif autoStormBossEnabled then
-                -- Give Trick or Treat doors time to stream in before the one-shot Storm script runs
+            elseif autoClockTowerEnabled then
+                local option = currentClockTower()
+                -- Give Trick or Treat doors time to stream in before the one-shot lobby script runs
                 local settled = os.clock() - (lobbyArrivedAt or 0) >= LOBBY_SETTLE_TIME
                 if not settled then
                     if statusLabel then
@@ -2681,10 +2865,10 @@ task.spawn(function()
                     end
                 else
                     if statusLabel then
-                        statusLabel.Text = "Status: In lobby, running Storm Boss script..."
+                        statusLabel.Text = "Status: In lobby, running " .. option.label .. " script..."
                         statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                     end
-                    tryStormBossLobby()
+                    tryClockTowerLobby()
                 end
             else
                 if statusLabel then
@@ -2699,9 +2883,10 @@ task.spawn(function()
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
                 runLoadstringOnce(LOADSTRING_URL, "CANDY_LOADSTRING_RAN")
-            elseif autoStormBossEnabled then
+            elseif autoClockTowerEnabled then
+                local option = currentClockTower()
                 if statusLabel then
-                    statusLabel.Text = "Status: Nothing ready, running Storm backup..."
+                    statusLabel.Text = "Status: Nothing ready, running " .. option.label .. " backup..."
                     statusLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
                 end
                 if os.clock() - lastStormTravel > 30 then
@@ -2709,7 +2894,7 @@ task.spawn(function()
                     teleportViaRemotes("clocktower")
                     task.wait(5)
                 end
-                runLoadstringOnce(STORMBOSS_LOADSTRING_URL, "CANDY_STORMBOSS_LOADSTRING_RAN")
+                runLoadstringOnce(option.loadstringUrl, option.flagKey)
             else
                 if statusLabel then
                     statusLabel.Text = "Status: Nothing ready, Auto Bosses are OFF"
