@@ -427,7 +427,7 @@ local CLOCK_TOWER_OPTIONS = {
     {
         label = "Storm Engine",
         doorKey = 3,
-        loadstringUrl = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoWorldBoss.lua",
+        loadstringUrl = "https://raw.githubusercontent.com/lghft/Current/refs/heads/main/House/EventMisc/Halloween/autoStormBoss.lua",
         flagKey = "CANDY_CLOCK_STORM_RAN",
     },
     {
