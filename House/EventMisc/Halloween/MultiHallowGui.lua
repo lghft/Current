@@ -17,6 +17,40 @@ while not player do
     player = Players.LocalPlayer
 end
 
+repeat task.wait() until game:IsLoaded()
+Services = setmetatable({}, {
+	__index = function(self, name)
+		local success, cache = pcall(function()
+			return cloneref(game:GetService(name))
+		end)
+		if success then
+			rawset(self, name, cache)
+			return cache
+		else
+			error("Invalid Service: " .. tostring(name))
+		end
+	end
+})
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local antiAfkCon = nil
+if getconnections then
+    for _, c in getconnections(LocalPlayer.Idled) do
+        pcall(function() c:Disable() end) -- supposed to "pause" it
+        pcall(function() c:Disconnect() end) -- supposed to disconnect it
+    end
+end
+
+if antiAfkCon then
+    antiAfkCon:Disconnect()
+    antiAfkCon = nil
+end
+antiAfkCon = LocalPlayer.Idled:Connect(function()
+    Services.VirtualUser:CaptureController()
+    Services.VirtualUser:ClickButton2(Vector2.zero)
+end)
+
 -- Unload any previous run of this script so only the newest execution is active
 local env = (getgenv and getgenv()) or _G
 if type(env.CANDY_LOOP_UNLOAD) == "function" then
