@@ -1,19 +1,4 @@
 -- Mausoleum Macro Manager
--- LATEST CHANGES:
--- • Added "Auto Replay" toggle (Main tab): fires RespondToQuery("game_over", true) when phase == "over" and the GameOver GUI exists
--- • Added "Auto Petrify Break" toggle to automatically fire PetrifyBreakout click detectors
--- • Final tier (6/6) waits for a RoomKey change / DraculaCrypt; closest-Gather check; Gather path in status label with position
--- • Added Current RoomKey display under the gather part in the status label
--- • Updated gather check to strictly compare against Teleport Gather part + 30-stud proximity fallback check
--- • Room anchor now resolved by scanning slots using Teleport-matching logic; playback waits for build phase + delay
--- • Debug button: teleport to the tower the current macro step acts on
--- • ProximityPrompt.HoldDuration set to 0 and triggered using fireproximityprompt(prompt) for instant vault fire
--- • Vault teleport only at 6/6 tier
--- • Special case: 5/6 cleared phase with Slot4 Tier=6 detection teleports directly to Slot5
--- • 3 second delay before build phase before macro swap
--- • 2 second delay before teleporting to next room (with teleport validation failsafe)
--- • Added red (previous) and green (current) gather part sphere indicators during playback
--- • Added "Current Playback Part" tracking with action/position info under Current RoomKey
 
 local success, initError = pcall(function()
     if not game:IsLoaded() then game.Loaded:Wait() end
