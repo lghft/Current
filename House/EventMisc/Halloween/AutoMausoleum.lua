@@ -100,6 +100,8 @@ local success, initError = pcall(function()
         auto_petrify_break = false,
         -- AUTO-REPLAY SETTINGS
         auto_replay = false,
+        -- ANTI-AFK SETTINGS
+        anti_afk = true,
     }
 
     local SETTINGS_FILE = CONFIG_FOLDER .. "/MacroSettings.json"
@@ -3320,6 +3322,44 @@ local success, initError = pcall(function()
             Settings.max_retries = Value
             SaveSettings()
         end,
+    })
+
+    -- ANTI-AFK
+    local disabledIdleConnections = {}
+
+    local function setAntiAfk(enabled)
+        pcall(function()
+            if enabled then
+                for _, v in pairs(getconnections(LocalPlayer.Idled)) do
+                    pcall(function() v:Disable() end)
+                    table.insert(disabledIdleConnections, v)
+                end
+            else
+                -- Re-enable whatever we disabled earlier
+                for _, v in ipairs(disabledIdleConnections) do
+                    pcall(function() v:Enable() end)
+                end
+                table.clear(disabledIdleConnections)
+            end
+        end)
+    end
+
+    -- Apply on load if enabled
+    if Settings.anti_afk then
+        setAntiAfk(true)
+    end
+
+    SettingsTab:CreateSection({ name = "Miscellaneous" })
+
+    SettingsTab:CreateToggle({
+        name = "Anti-AFK",
+        value = Settings.anti_afk,
+        flag = "AntiAFK",
+        callback = Guard(function(Value)
+            Settings.anti_afk = Value
+            SaveSettings()
+            setAntiAfk(Value)
+        end),
     })
 
     task.spawn(function()
