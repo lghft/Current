@@ -1,11 +1,22 @@
--- Wendy ability timer GUI: manual fire buttons, cooldown display, press log
+repeat task.wait(4) until game:IsLoaded()
+local PROFILES = {
+    wendy = {
+        buff = "damage_buff__magic",  -- buff value name under _buffs
+        initialGap = 8,               -- buff mode: seconds between unit 1 and unit 2 in the opening
+        loopAfterOpening = true,     -- buff mode: true keeps looping after the opening
+        fixedGaps = nil,              -- nil = use buff logic
+    },
+    erwin = {
+        buff = "damage_buff__magic",  -- CHANGE this to Erwin's real buff name if it differs
+        initialGap = 8,
+        loopAfterOpening = true,
+        fixedGaps = {8, 23, 8, 23},   -- fixed timing: seconds after unit 1,2,3,4 fire before the next one
+    },
+}
 
-local UNIT_NAME = "wendy"      -- internal unit name in workspace._UNITS
-local DEFAULT_COOLDOWN = 60    -- seconds; editable in the GUI
-local INITIAL_GAP = 8          -- auto mode: seconds between unit 1 and unit 2 in the opening
-local LOOP_AFTER_OPENING = true   -- true: keep looping after the opening; false: stop so the game's auto ability can take over
-local AUTO_START = true           -- start Auto by itself whenever 4 Wendys are placed
-local SETTLE = 0.5             -- auto mode: seconds to wait after a fire before checking buffs again
+local DEFAULT_COOLDOWN = 60    -- seconds; editable in the GUI (fallback when the unit's cooldown can't be read)
+local AUTO_START = true       -- start Auto by itself whenever 4 Units are placed
+local SETTLE = 0.5             -- seconds to wait after a fire before checking buffs again
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -19,7 +30,7 @@ local remote = RS:WaitForChild("endpoints"):WaitForChild("client_to_server"):Wai
 local guiParent
 pcall(function() guiParent = (gethui and gethui()) or game:GetService("CoreGui") end)
 if not guiParent then guiParent = localPlayer:WaitForChild("PlayerGui") end
-local old = guiParent:FindFirstChild("WendyTimerGui")
+local old = guiParent:FindFirstChild("UnitTimerGui")
 if old then old:Destroy() end
 
 local function new(class, props, parent)
@@ -35,8 +46,13 @@ local GREEN = Color3.fromRGB(80, 200, 120)
 local ORANGE = Color3.fromRGB(240, 170, 60)
 local RED = Color3.fromRGB(230, 80, 80)
 
+-- profile for a unit (defaults to wendy settings for anything unexpected)
+local function profileOf(unit)
+    return PROFILES[unit.Name] or PROFILES.wendy
+end
+
 ----------------------------------------------------------------- UI
-local gui = new("ScreenGui", {Name = "WendyTimerGui", ResetOnSpawn = false}, guiParent)
+local gui = new("ScreenGui", {Name = "UnitTimerGui", ResetOnSpawn = false}, guiParent)
 local main = new("Frame", {
     Size = UDim2.fromOffset(330, 470), Position = UDim2.fromOffset(20, 100),
     BackgroundColor3 = Color3.fromRGB(24, 24, 28), BorderSizePixel = 0,
@@ -45,7 +61,7 @@ corner(main, 8)
 
 local title = new("TextLabel", {
     Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Color3.fromRGB(36, 36, 42),
-    BorderSizePixel = 0, Text = "  Wendy Timer", TextColor3 = Color3.new(1, 1, 1),
+    BorderSizePixel = 0, Text = "  Unit Timer", TextColor3 = Color3.new(1, 1, 1),
     Font = Enum.Font.GothamBold, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
 }, main)
 corner(title, 8)
@@ -104,7 +120,7 @@ local list = new("ScrollingFrame", {
     Size = UDim2.new(1, -20, 0, 160), Position = UDim2.fromOffset(10, 68),
     BackgroundColor3 = Color3.fromRGB(30, 30, 36), BorderSizePixel = 0,
     ScrollBarThickness = 4, AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(), 
+    CanvasSize = UDim2.new(),
 }, main)
 corner(list)
 new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, list)
@@ -151,7 +167,7 @@ end)
 local function log(text)
     logOrder += 1
     table.insert(logLines, text)
-    print("[Wendy] " .. text)
+    print("[Ability] " .. text)
     new("TextLabel", {
         Size = UDim2.new(1, -6, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true,
         BackgroundTransparency = 1, Text = text,
@@ -163,10 +179,10 @@ local function log(text)
     end)
 end
 
--- buff helpers: damage_buff__magic is 1 when the buff is on
+-- buff helpers: each unit's profile names its buff value (1 = on)
 local function isOn(unit)
     local b = unit:FindFirstChild("_buffs")
-    local v = b and b:FindFirstChild("damage_buff__magic")
+    local v = b and b:FindFirstChild(profileOf(unit).buff)
     return v ~= nil and v.Value ~= 0
 end
 
@@ -213,7 +229,7 @@ local function fire(unit, row)
     end)
 end
 
--- true = Auto may start itself once 4 Wendys exist (re-armed whenever one is sold)
+-- true = Auto may start itself once 4 units exist (re-armed whenever one is sold)
 local autoArmed = AUTO_START
 
 local function removeRow(unit)
@@ -231,15 +247,15 @@ local function addRow(unit)
     for _, r in pairs(rows) do used[r.index] = true end
     counter = 1
     while used[counter] do counter += 1 end
-    local row = {name = "Wendy " .. counter, index = counter}
+    local row = {name = "Unit " .. counter, index = counter}
     local f = new("Frame", {
         Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = Color3.fromRGB(40, 40, 48),
         BorderSizePixel = 0, LayoutOrder = counter,
     }, list)
     corner(f, 5)
     new("TextLabel", {
-        Size = UDim2.fromOffset(90, 22), Position = UDim2.fromOffset(8, 4), BackgroundTransparency = 1,
-        Text = row.name, TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold,
+        Size = UDim2.fromOffset(150, 22), Position = UDim2.fromOffset(8, 4), BackgroundTransparency = 1,
+        Text = row.name .. " (" .. unit.Name .. ")", TextColor3 = Color3.new(1, 1, 1), Font = Enum.Font.GothamBold,
         TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
     }, f)
     row.status = new("TextLabel", {
@@ -285,9 +301,9 @@ copyBtn.MouseButton1Click:Connect(function()
     local text = table.concat(logLines, "\n")
     if setclipboard then
         setclipboard(text)
-        print("[Wendy] Log copied to clipboard")
+        print("[Ability] Log copied to clipboard")
     else
-        print("[Wendy] setclipboard not available; log:\n" .. text)
+        print("[Ability] setclipboard not available; log:\n" .. text)
     end
 end)
 closeBtn.MouseButton1Click:Connect(function()
@@ -307,10 +323,13 @@ end
 local function autoCore(token)
     local u = ordered()
     if #u < 4 then
-        log("Auto: need 4 Wendys, found " .. #u)
+        log("Auto: need 4 Units, found " .. #u)
         return
     end
     while #u > 4 do table.remove(u) end
+
+    -- timing settings come from the first unit's profile
+    local prof = profileOf(u[1].unit)
 
     local function active()
         if not (alive and autoOn and token == autoToken) then return false end
@@ -349,16 +368,31 @@ local function autoCore(token)
     if not waitUntil(clean) then return end
 
     roundStart, lastPress = nil, nil
-    log("Auto: started")
+    log("Auto: started (" .. u[1].unit.Name .. " profile)")
 
-    -- opening
+    -- fixed-gap mode (used by erwin): fire on a set schedule, still respecting cooldowns and stuns
+    if prof.fixedGaps then
+        local i = 1
+        while active() do
+            local unit, row = u[i].unit, u[i].row
+            if not waitUntil(function()
+                return not (row.lastFired and (os.clock() - row.lastFired) < getCooldown(unit))
+            end) then break end
+            if not go(i) then break end
+            task.wait(math.max(0, prof.fixedGaps[i] - SETTLE))
+            i = i % 4 + 1
+        end
+        return
+    end
+
+    -- buff-based opening (used by wendy)
     if not go(1) then return end
-    task.wait(INITIAL_GAP)
+    task.wait(prof.initialGap)
     if not go(2) then return end
     if not (waitUntil(function() return off(2, 3, 4) end) and go(3)) then return end
     if not (waitUntil(function() return off(1) end) and go(4)) then return end
 
-    if not LOOP_AFTER_OPENING then
+    if not prof.loopAfterOpening then
         log("Auto: opening done - turn on the game's auto ability now")
         return "done"
     end
@@ -390,7 +424,7 @@ local function autoRun(token)
     if token == autoToken and autoOn then
         autoOn = false
         setAutoVisual()
-        if ok and res ~= "done" then log("Auto: stopped (a Wendy was sold or an error occurred) - place it again, then turn Auto back on") end
+        if ok and res ~= "done" then log("Auto: stopped (a Unit was sold or an error occurred) - place it again, then turn Auto back on") end
     end
 end
 
@@ -409,11 +443,11 @@ end
 autoBtn.MouseButton1Click:Connect(function() setAuto(not autoOn) end)
 
 ----------------------------------------------------------------- loops
--- find your Wendys / drop sold ones
+-- find your supported units (any name in PROFILES) / drop sold ones
 task.spawn(function()
     while alive do
         for _, unit in ipairs(unitsFolder:GetChildren()) do
-            if unit.Name == UNIT_NAME and not rows[unit] then
+            if PROFILES[unit.Name] and not rows[unit] then
                 local stats = unit:FindFirstChild("_stats")
                 local owner = stats and stats:FindFirstChild("player")
                 if owner and owner.Value == localPlayer then addRow(unit) end
@@ -426,7 +460,7 @@ task.spawn(function()
         local n = 0
         for _ in pairs(rows) do n += 1 end
         if autoArmed and not autoOn and n >= 4 then
-            log("4 Wendys placed - starting Auto")
+            log("4 Units placed - starting Auto")
             setAuto(true)
         end
         task.wait(1)
@@ -458,4 +492,4 @@ task.spawn(function()
     end
 end)
 
-print("[Wendy] GUI loaded")
+print("[Ability] GUI loaded")
