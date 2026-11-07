@@ -73,8 +73,17 @@ local function getKillAuraButton(itemsFolder)
 	return nil
 end
 
--- Main monitoring loop (runs every 0.1 seconds for smooth milliseconds)
+-- Main initialization and monitoring loop
 task.spawn(function()
+	print("Waiting for SLH Hub to load...")
+	
+	-- Pause the script here until the GUI actually exists in CoreGui
+	while not getSLHHub() do
+		task.wait(0.5)
+	end
+	
+	print("SLH Hub detected! Starting AFK and Raid monitor...")
+	
 	while true do
 		task.wait(0.1) 
 		
