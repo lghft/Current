@@ -3,7 +3,7 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local IDLE_THRESHOLD = 150 -- Seconds required to trigger
+local IDLE_THRESHOLD = 90 -- Seconds required to trigger
 local MOVEMENT_THRESHOLD = 0.5 -- Studs moved to count as "moving"
 
 local idleTime = 0
