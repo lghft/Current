@@ -111,7 +111,7 @@ task.spawn(function()
 		if idleTime >= IDLE_THRESHOLD then
 			-- Check if the map does NOT contain "Raid"
 			if not hasRaidMap() then
-				print("Conditions met: Inactive for 150s + Non-Raid map. Executing action...")
+				print("Conditions met: Inactive for ".. IDLE_THRESHOLD .."s + Non-Raid map. Executing action...")
 				
 				local hub = getSLHHub()
 				if hub then
