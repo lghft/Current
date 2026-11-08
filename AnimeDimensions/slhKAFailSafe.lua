@@ -120,12 +120,19 @@ task.spawn(function()
 						local btn = getKillAuraButton(itemsFolder)
 						
 						if btn then
-							print("yes")
-							firesignal(btn.MouseButton1Down)
-							print('btndown')
-							task.wait(1)
-							firesignal(btn.MouseButton1Down)
-							print('btnup')
+                            if btn.Frame.Visible then
+                                print("btn is on")
+                                firesignal(btn.MouseButton1Down)
+                                print('btndown')
+                                task.wait(1)
+                                firesignal(btn.MouseButton1Down)
+                                print('btnup')
+                            else
+                                print("btn is off")
+                                firesignal(btn.MouseButton1Down)
+                                print('btndown')
+                            end
+							
 						else
 							print("no? (Could not find a button with the Kill Aura label text)")
 						end
