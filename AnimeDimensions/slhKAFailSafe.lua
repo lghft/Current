@@ -4,7 +4,7 @@ local CoreGui = game:GetService("CoreGui")
 local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
 local LocalPlayer = Players.LocalPlayer
 local IDLE_THRESHOLD = 40 -- Seconds required to trigger (timer 1)
-local IDLE_THRESHOLD_2 = 90 -- Seconds required to trigger (timer 2)
+local IDLE_THRESHOLD_2 = 60 -- Seconds required to trigger (timer 2)
 local MOVEMENT_THRESHOLD = 0.5 -- Studs moved to count as "moving"
 
 local idleTime = 0
@@ -114,7 +114,7 @@ task.spawn(function()
 
 		-- Update both timer displays
 		statusLabel = updateTimerDisplay(statusLabel, "AFKTimerLabel", "AFK Timer:", 0, idleTime, IDLE_THRESHOLD)
-		statusLabel2 = updateTimerDisplay(statusLabel2, "AFKTimerLabel90", "AFK Timer (90s):", 60, idleTime2, IDLE_THRESHOLD_2)
+		statusLabel2 = updateTimerDisplay(statusLabel2, "AFKTimerLabel2", "AFK Timer 2:", 60, idleTime2, IDLE_THRESHOLD_2)
 
 		-- Timer 1: original 40s check
 		if idleTime >= IDLE_THRESHOLD then
@@ -156,10 +156,9 @@ task.spawn(function()
 			end
 		end
 
-		-- Timer 2: 90s check
 		if idleTime2 >= IDLE_THRESHOLD_2 then
 			if not hasRaidMap() then
-				print("90s idle threshold reached + Non-Raid map. Running second action...")
+				print("idle threshold reached + Non-Raid map. Running second action...")
 
 				if game:GetService("Players").LocalPlayer.PlayerGui.UniversalGui.UniversalCenterUIFrame.ResultUI.Visible == true then
 					local targetCode8 = "11167079176002922000164780725282"
