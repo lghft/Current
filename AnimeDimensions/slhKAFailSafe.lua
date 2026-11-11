@@ -124,6 +124,15 @@ task.spawn(function()
 							})
 						end
 					end)
+				elseif game:GetService("Players").LocalPlayer.PlayerGui.UniversalGui.UniversalCenterUIFrame.RaidResultUI.Visible == true then
+					--local targetCode8 = "11167079176002922000164780725282"
+					task.spawn(function()
+						if ServerType ~= "VIPServer" then
+							game:GetService("ExperienceService"):LaunchExperience({
+								placeId = 6938803436,
+							})
+						end
+					end)
 				else
 					local hub = getSLHHub()
 					if hub then
