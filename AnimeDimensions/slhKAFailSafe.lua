@@ -4,7 +4,7 @@ local CoreGui = game:GetService("CoreGui")
 local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
 local LocalPlayer = Players.LocalPlayer
 local IDLE_THRESHOLD = 40 -- Seconds required to trigger (timer 1)
-local IDLE_THRESHOLD_2 = 60 -- Seconds required to trigger (timer 2)
+local IDLE_THRESHOLD_2 = 10 -- Seconds required to trigger (timer 2)
 local MOVEMENT_THRESHOLD = 0.5 -- Studs moved to count as "moving"
 
 local idleTime = 0
