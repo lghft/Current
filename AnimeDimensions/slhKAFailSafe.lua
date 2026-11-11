@@ -3,15 +3,12 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
 local LocalPlayer = Players.LocalPlayer
-local IDLE_THRESHOLD = 40 -- Seconds required to trigger (timer 1)
-local IDLE_THRESHOLD_2 = 10 -- Seconds required to trigger (timer 2)
+local IDLE_THRESHOLD = 40 -- Seconds required to trigger
 local MOVEMENT_THRESHOLD = 0.5 -- Studs moved to count as "moving"
 
 local idleTime = 0
-local idleTime2 = 0
 local lastPosition = nil
 local statusLabel = nil
-local statusLabel2 = nil
 
 -- Function to check if any child in workspace.GameMap contains "Raid"
 local function hasRaidMap()
@@ -36,8 +33,8 @@ local function getSLHHub()
 	return nil
 end
 
--- Creates or updates a timer label. yOffset stacks multiple labels vertically.
-local function updateTimerDisplay(existingLabel, labelName, title, yOffset, currentTime, threshold)
+-- Creates or updates the timer label
+local function updateTimerDisplay(existingLabel, currentTime, threshold)
 	local hub = getSLHHub()
 	if not hub then return existingLabel end
 
@@ -47,9 +44,9 @@ local function updateTimerDisplay(existingLabel, labelName, title, yOffset, curr
 	local label = existingLabel
 	if not label or not label.Parent then
 		label = Instance.new("TextLabel")
-		label.Name = labelName
+		label.Name = "AFKTimerLabel"
 		label.Size = UDim2.new(0, 150, 0, 50)
-		label.Position = UDim2.new(1, 10, 0.4, yOffset)
+		label.Position = UDim2.new(1, 10, 0.4, 0)
 		label.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 		label.BorderColor3 = Color3.fromRGB(255, 0, 0)
 		label.BorderSizePixel = 2 -- Thicker red stroke/border
@@ -60,9 +57,9 @@ local function updateTimerDisplay(existingLabel, labelName, title, yOffset, curr
 		label.Parent = mainFrame
 	end
 
-	-- Calculate remaining time with millisecond precision (1 decimal place)
+	-- Calculate remaining time with 1 decimal place
 	local timeLeft = math.max(0, threshold - currentTime)
-	label.Text = string.format("%s\n%.1fs / %ds", title, timeLeft, threshold)
+	label.Text = string.format("AFK Timer:\n%.1fs / %ds", timeLeft, threshold)
 
 	return label
 end
@@ -102,78 +99,65 @@ task.spawn(function()
 
 				if distance < MOVEMENT_THRESHOLD then
 					idleTime = idleTime + 0.1
-					idleTime2 = idleTime2 + 0.1
 				else
-					-- Player moved, reset both timers
+					-- Player moved, reset timer
 					idleTime = 0
-					idleTime2 = 0
 				end
 			end
 			lastPosition = hrp.Position
 		end
 
-		-- Update both timer displays
-		statusLabel = updateTimerDisplay(statusLabel, "AFKTimerLabel", "AFK Timer:", 0, idleTime, IDLE_THRESHOLD)
-		statusLabel2 = updateTimerDisplay(statusLabel2, "AFKTimerLabel2", "AFK Timer 2:", 60, idleTime2, IDLE_THRESHOLD_2)
+		-- Update timer display
+		statusLabel = updateTimerDisplay(statusLabel, idleTime, IDLE_THRESHOLD)
 
-		-- Timer 1: original 40s check
+		-- Timer check
 		if idleTime >= IDLE_THRESHOLD then
 			if not hasRaidMap() then
 				print("Conditions met: Inactive for " .. IDLE_THRESHOLD .. "s + Non-Raid map. Executing action...")
 
-				local hub = getSLHHub()
-				if hub then
-					local success, err = pcall(function()
-						local itemsFolder = hub.main.rightside.InGameSector.items
-						local btn = getKillAuraButton(itemsFolder)
-
-						if btn then
-							if btn.Frame.Visible then
-								print("btn is on")
-								firesignal(btn.MouseButton1Down)
-								print('btndown')
-								task.wait(1)
-								firesignal(btn.MouseButton1Down)
-								print('btnup')
-							else
-								print("btn is off")
-								firesignal(btn.MouseButton1Down)
-								print('btndown')
-							end
-						else
-							print("no? (Could not find a button with the Kill Aura label text)")
-						end
-					end)
-					if not success then
-						warn("Error interacting with UI: " .. tostring(err))
-					end
-				else
-					warn("SLH Hub Modified GUI not found in CoreGui.")
-				end
-
-				-- Reset timer 1 after execution
-				idleTime = 0
-			end
-		end
-
-		if idleTime2 >= IDLE_THRESHOLD_2 then
-			if not hasRaidMap() then
-				print("idle threshold reached + Non-Raid map. Running second action...")
-
 				if game:GetService("Players").LocalPlayer.PlayerGui.UniversalGui.UniversalCenterUIFrame.ResultUI.Visible == true then
-					local targetCode8 = "11167079176002922000164780725282"
+					--local targetCode8 = "11167079176002922000164780725282"
 					task.spawn(function()
 						if ServerType ~= "VIPServer" then
 							game:GetService("ExperienceService"):LaunchExperience({
 								placeId = 6938803436,
-								linkCode = tostring(targetCode8)
 							})
 						end
 					end)
+				else
+					local hub = getSLHHub()
+					if hub then
+						local success, err = pcall(function()
+							local itemsFolder = hub.main.rightside.InGameSector.items
+							local btn = getKillAuraButton(itemsFolder)
+
+							if btn then
+								if btn.Frame.Visible then
+									print("btn is on")
+									firesignal(btn.MouseButton1Down)
+									print('btndown')
+									task.wait(1)
+									firesignal(btn.MouseButton1Down)
+									print('btnup')
+								else
+									print("btn is off")
+									firesignal(btn.MouseButton1Down)
+									print('btndown')
+								end
+							else
+								print("no? (Could not find a button with the Kill Aura label text)")
+							end
+						end)
+						if not success then
+							warn("Error interacting with UI: " .. tostring(err))
+						end
+					else
+						warn("SLH Hub Modified GUI not found in CoreGui.")
+					end
 				end
 
-				-- Reset timer 2 after execution
-				idleTime2 = 0
+				-- Reset timer after execution
+				idleTime = 0
 			end
 		end
 	end
