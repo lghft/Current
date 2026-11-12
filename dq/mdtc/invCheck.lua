@@ -52,7 +52,7 @@ _G.itemlist = {
 -- ==========================================
 -- WEBHOOK CONFIGURATION
 -- ==========================================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1559062127078285312/TOZpD3Uy0TVMc-BueguA6sNdQ6v3AnT4BWzPrdzENqR24tHm1W5iHVFk2PTQcmlmXpMh"
+local WEBHOOK_URL = getgenv().WEBHOOK_URL
 
 -- ==========================================
 -- INVENTORY FUNCTIONS (DEFINED FIRST)
